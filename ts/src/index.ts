@@ -13,7 +13,7 @@ export type {
   ProxyAcceptedResponse,
   ProxyJobStatus,
   ProxyVeilReceipt,
-  PIIAnnotation,
-  MessagesRequest,
+  ProxyPIIAnnotation,
+  ProxyMessagesRequest,
   MessagesOptions,
 } from './types.js';
