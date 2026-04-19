@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { TheVeilConfigError, TheVeilError, TheVeilHttpError } from './errors.js';
+import {
+  TheVeilConfigError,
+  TheVeilError,
+  TheVeilHttpError,
+  TheVeilTimeoutError,
+} from './errors.js';
 
 describe('TheVeilError hierarchy', () => {
   it('TheVeilError is an Error and preserves the message', () => {
@@ -21,6 +26,7 @@ describe('TheVeilError hierarchy', () => {
 
   it('TheVeilHttpError preserves status and body', () => {
     const err = new TheVeilHttpError('nope', 503, { reason: 'degraded' });
+    expect(err).toBeInstanceOf(Error);
     expect(err).toBeInstanceOf(TheVeilError);
     expect(err).toBeInstanceOf(TheVeilHttpError);
     expect(err.name).toBe('TheVeilHttpError');
@@ -31,5 +37,16 @@ describe('TheVeilError hierarchy', () => {
   it('TheVeilHttpError keeps a non-object body verbatim', () => {
     const err = new TheVeilHttpError('plain', 502, 'upstream timeout');
     expect(err.body).toBe('upstream timeout');
+  });
+
+  it('TheVeilTimeoutError extends TheVeilError and preserves cause', () => {
+    const underlying = new Error('aborted');
+    underlying.name = 'AbortError';
+    const err = new TheVeilTimeoutError('timeout', { cause: underlying });
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(TheVeilError);
+    expect(err).toBeInstanceOf(TheVeilTimeoutError);
+    expect(err.name).toBe('TheVeilTimeoutError');
+    expect(err.cause).toBe(underlying);
   });
 });

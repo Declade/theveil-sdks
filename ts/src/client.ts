@@ -1,9 +1,33 @@
-import { TheVeilConfigError, TheVeilHttpError } from './errors.js';
+import {
+  TheVeilConfigError,
+  TheVeilError,
+  TheVeilHttpError,
+  TheVeilTimeoutError,
+} from './errors.js';
 import type { TheVeilConfig } from './types.js';
 
 const API_KEY_PATTERN = /^dsa_[0-9a-f]{32}$/;
-const DEFAULT_BASE_URL = 'https://vault.dsaveil.io';
+
+// Default points at the hosted gateway for solo-dev tier.
+// Enterprise self-hosters must pass baseUrl explicitly.
+const DEFAULT_BASE_URL = 'https://gateway.dsaveil.io';
+
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+function normalizeBaseUrl(raw: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new TheVeilConfigError(`Invalid baseUrl: ${raw}`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new TheVeilConfigError(
+      `baseUrl must use http or https, got: ${parsed.protocol}`,
+    );
+  }
+  return raw.replace(/\/+$/, '');
+}
 
 export class TheVeil {
   public readonly apiKey: string;
@@ -17,15 +41,9 @@ export class TheVeil {
       );
     }
 
-    let baseUrl = DEFAULT_BASE_URL;
-    if (config.baseUrl !== undefined) {
-      try {
-        new URL(config.baseUrl);
-      } catch {
-        throw new TheVeilConfigError(`Invalid baseUrl: ${config.baseUrl}`);
-      }
-      baseUrl = config.baseUrl.replace(/\/+$/, '');
-    }
+    // Defense in depth: validate and normalize both the default and any caller override.
+    const rawBaseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
+    const baseUrl = normalizeBaseUrl(rawBaseUrl);
 
     let timeoutMs = DEFAULT_TIMEOUT_MS;
     if (config.timeoutMs !== undefined) {
@@ -47,10 +65,19 @@ export class TheVeil {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
+    // Normalize caller headers via the Headers API — this lowercases all header
+    // names per the fetch spec, so the SDK-owned keys below unambiguously win.
+    const callerHeaders: Record<string, string> = {};
+    if (init.headers !== undefined) {
+      const h = new Headers(init.headers);
+      h.forEach((value, key) => {
+        callerHeaders[key] = value;
+      });
+    }
     const mergedHeaders: Record<string, string> = {
+      ...callerHeaders,
       'x-api-key': this.apiKey,
       'content-type': 'application/json',
-      ...(init.headers as Record<string, string> | undefined),
     };
 
     try {
@@ -78,6 +105,17 @@ export class TheVeil {
         );
       }
       return body as T;
+    } catch (err) {
+      if (err instanceof TheVeilError) {
+        throw err;
+      }
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new TheVeilTimeoutError(
+          `Request timed out after ${this.timeoutMs}ms`,
+          { cause: err },
+        );
+      }
+      throw new TheVeilError('Request failed', { cause: err });
     } finally {
       clearTimeout(timer);
     }
