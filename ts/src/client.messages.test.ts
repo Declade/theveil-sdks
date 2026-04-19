@@ -8,7 +8,12 @@ import {
   TheVeilTimeoutError,
 } from './errors.js';
 import { server } from './test-server.js';
-import type { MessagesRequest } from './types.js';
+import type {
+  MessagesRequest,
+  ProxyAcceptedResponse,
+  ProxyResponse,
+  ProxySyncResponse,
+} from './types.js';
 
 // Obviously-fake identifiers — no real keys, names, or PII.
 const VALID_KEY = 'dsa_0123456789abcdef0123456789abcdef';
@@ -22,12 +27,12 @@ const BASIC_REQUEST: MessagesRequest = {
   max_tokens: 1024,
 };
 
-describe('TheVeil.messages() — happy path', () => {
-  it('returns a typed ProxyResponse on 200', async () => {
+describe('TheVeil.messages() — happy path (sync 200)', () => {
+  it('returns a typed ProxySyncResponse on 200', async () => {
     server.use(
       http.post(MESSAGES_URL, () =>
         HttpResponse.json({
-          status: 'completed',
+          status: 'JOB_STATUS_COMPLETED',
           model_used: 'claude-sonnet-4-5',
           latency_ms: 142,
           result: { content: [{ type: 'text', text: 'Hello [PERSON_1]' }] },
@@ -40,7 +45,13 @@ describe('TheVeil.messages() — happy path', () => {
     const client = new TheVeil({ apiKey: VALID_KEY });
     const response = await client.messages(BASIC_REQUEST);
 
-    expect(response.status).toBe('completed');
+    // Discriminated union: narrow via the `status` literal. The async path
+    // sets status='processing'; the sync path sets it to a JobStatus enum.
+    if (response.status === 'processing') {
+      expect.fail('expected sync response, got async 202 shape');
+      return;
+    }
+    expect(response.status).toBe('JOB_STATUS_COMPLETED');
     expect(response.model_used).toBe('claude-sonnet-4-5');
     expect(response.latency_ms).toBe(142);
     expect(response.request_id).toBe('req_test_0001');
@@ -70,6 +81,72 @@ describe('TheVeil.messages() — happy path', () => {
     expect(capturedBody).toEqual(BASIC_REQUEST);
     expect(capturedHeaders['x-api-key']).toBe(VALID_KEY);
     expect(capturedHeaders['content-type']).toBe('application/json');
+  });
+});
+
+describe('TheVeil.messages() — async 202 accepted', () => {
+  it('returns a typed ProxyAcceptedResponse when the gateway times out to 202', async () => {
+    server.use(
+      http.post(MESSAGES_URL, () =>
+        HttpResponse.json(
+          {
+            status: 'processing',
+            job_id: 'job_test_0001',
+            request_id: 'req_test_0001',
+            status_url: '/api/v1/proxy/jobs/job_test_0001',
+          },
+          { status: 202 },
+        ),
+      ),
+    );
+
+    const client = new TheVeil({ apiKey: VALID_KEY });
+    const response = await client.messages(BASIC_REQUEST);
+
+    // Narrow into the accepted branch. After this check, the compiler should
+    // expose job_id / status_url and hide model_used / latency_ms.
+    if (response.status !== 'processing') {
+      expect.fail('expected async 202 response, got sync shape');
+      return;
+    }
+    expect(response.status).toBe('processing');
+    expect(response.job_id).toBe('job_test_0001');
+    expect(response.request_id).toBe('req_test_0001');
+    expect(response.status_url).toBe('/api/v1/proxy/jobs/job_test_0001');
+  });
+
+  it('carries the optional veil receipt when pro/enterprise tier is active', async () => {
+    server.use(
+      http.post(MESSAGES_URL, () =>
+        HttpResponse.json(
+          {
+            status: 'processing',
+            job_id: 'job_test_0002',
+            request_id: 'req_test_0002',
+            status_url: '/api/v1/proxy/jobs/job_test_0002',
+            veil: {
+              status: 'pending',
+              certificate_url: '/api/v1/veil/certificate/req_test_0002',
+              summary_url: '/api/v1/veil/certificate/req_test_0002/summary',
+            },
+          },
+          { status: 202 },
+        ),
+      ),
+    );
+
+    const client = new TheVeil({ apiKey: VALID_KEY });
+    const response = await client.messages(BASIC_REQUEST);
+
+    if (response.status !== 'processing') {
+      expect.fail('expected async 202 response');
+      return;
+    }
+    expect(response.veil).toEqual({
+      status: 'pending',
+      certificate_url: '/api/v1/veil/certificate/req_test_0002',
+      summary_url: '/api/v1/veil/certificate/req_test_0002/summary',
+    });
   });
 });
 
@@ -152,6 +229,106 @@ describe('TheVeil.messages() — timeout', () => {
       expect(err).toBeInstanceOf(TheVeilTimeoutError);
       expect((err as TheVeilTimeoutError).message).toContain('60ms');
     }
+  });
+});
+
+describe('TheVeil.messages() — numeric field finite guard', () => {
+  const client = new TheVeil({ apiKey: VALID_KEY });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects %s max_tokens with TheVeilConfigError mentioning the field', async (_label, value) => {
+    try {
+      await client.messages({ ...BASIC_REQUEST, max_tokens: value });
+      expect.fail('expected rejection');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TheVeilConfigError);
+      expect((err as TheVeilConfigError).message).toContain('max_tokens');
+    }
+  });
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects %s temperature with TheVeilConfigError mentioning the field', async (_label, value) => {
+    try {
+      await client.messages({ ...BASIC_REQUEST, temperature: value });
+      expect.fail('expected rejection');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TheVeilConfigError);
+      expect((err as TheVeilConfigError).message).toContain('temperature');
+    }
+  });
+
+  it.each([
+    ['NaN start', { start: Number.NaN, end: 10 }, 'start'],
+    ['Infinity end', { start: 0, end: Number.POSITIVE_INFINITY }, 'end'],
+    ['-Infinity start', { start: Number.NEGATIVE_INFINITY, end: 10 }, 'start'],
+  ])(
+    'rejects non-finite ground_truth offset: %s',
+    async (_label, offsets, expectedField) => {
+      try {
+        await client.messages({
+          ...BASIC_REQUEST,
+          ground_truth: {
+            name: [{ type: 'PERSON', value: 'Example Person', ...offsets }],
+          },
+        });
+        expect.fail('expected rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(TheVeilConfigError);
+        // Error message names the offending nested field path so callers can
+        // locate the bad annotation without diffing their payload.
+        expect((err as TheVeilConfigError).message).toContain('ground_truth');
+        expect((err as TheVeilConfigError).message).toContain(expectedField);
+      }
+    },
+  );
+
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['non-array string', 'not-an-array'],
+    ['non-array object', { foo: 'bar' }],
+    ['non-array number', 42],
+  ])(
+    'rejects malformed ground_truth[field] = %s with TheVeilConfigError',
+    async (_label, value) => {
+      try {
+        // Simulate a JS-only caller or `any`-typed payload bypassing the
+        // PIIAnnotation[] compile-time contract.
+        await client.messages({
+          ...BASIC_REQUEST,
+          ground_truth: { name: value } as unknown as MessagesRequest['ground_truth'],
+        });
+        expect.fail('expected rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(TheVeilConfigError);
+        expect((err as TheVeilConfigError).message).toContain('ground_truth.name');
+      }
+    },
+  );
+
+  it('accepts finite numeric fields on the happy path', async () => {
+    server.use(
+      http.post(MESSAGES_URL, () =>
+        HttpResponse.json({ status: 'JOB_STATUS_COMPLETED', model_used: 'm', latency_ms: 1 }),
+      ),
+    );
+
+    await expect(
+      client.messages({
+        ...BASIC_REQUEST,
+        max_tokens: 1024,
+        temperature: 0.7,
+        ground_truth: {
+          name: [{ type: 'PERSON', value: 'Example Person', start: 0, end: 14 }],
+        },
+      }),
+    ).resolves.toBeDefined();
   });
 });
 
@@ -260,6 +437,55 @@ describe('TheVeil.messages() — composed signal (caller + timeout)', () => {
       expect(err).toBeInstanceOf(TheVeilTimeoutError);
       expect((err as TheVeilTimeoutError).message).toContain('50ms');
     }
+  });
+});
+
+describe('ProxyResponse — compile-time discrimination', () => {
+  it('narrows ProxyResponse on status — wrong-branch field access is a type error', () => {
+    // Type-level tripwire. If the discriminated union regresses (e.g.
+    // someone flattens the two branches back into a single interface), the
+    // suppressions below will become unused and typecheck will fail.
+    const fakeSync = {} as ProxyResponse;
+    if (fakeSync.status !== 'processing') {
+      // Now narrowed to ProxySyncResponse. Async-only fields must be
+      // inaccessible.
+      // @ts-expect-error job_id lives only on ProxyAcceptedResponse.
+      const _noJobId: string = fakeSync.job_id;
+      // @ts-expect-error status_url lives only on ProxyAcceptedResponse.
+      const _noStatusUrl: string = fakeSync.status_url;
+      expect([_noJobId, _noStatusUrl]).toHaveLength(2);
+    }
+
+    const fakeAsync = {} as ProxyResponse;
+    if (fakeAsync.status === 'processing') {
+      // Now narrowed to ProxyAcceptedResponse. Sync-only fields must be
+      // inaccessible.
+      // @ts-expect-error model_used lives only on ProxySyncResponse.
+      const _noModel: string = fakeAsync.model_used;
+      // @ts-expect-error latency_ms lives only on ProxySyncResponse.
+      const _noLatency: number = fakeAsync.latency_ms;
+      expect([_noModel, _noLatency]).toHaveLength(2);
+    }
+  });
+
+  it('assignability: shape literals satisfy each variant', () => {
+    // Positive: canonical sync literal.
+    const sync: ProxySyncResponse = {
+      status: 'JOB_STATUS_COMPLETED',
+      model_used: 'claude-sonnet-4-5',
+      latency_ms: 1,
+    };
+    // Positive: canonical accepted literal.
+    const async_: ProxyAcceptedResponse = {
+      status: 'processing',
+      job_id: 'job_x',
+      request_id: 'req_x',
+      status_url: '/api/v1/proxy/jobs/job_x',
+    };
+    // Assign each into the union slot.
+    const u1: ProxyResponse = sync;
+    const u2: ProxyResponse = async_;
+    expect([u1, u2]).toHaveLength(2);
   });
 });
 

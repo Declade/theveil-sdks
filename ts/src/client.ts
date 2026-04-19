@@ -46,12 +46,61 @@ function validateTimeoutMs(value: number, source: string): number {
   return value;
 }
 
+// Rejects NaN, +Infinity, and -Infinity for any numeric request field.
+// JSON.stringify turns these into `null`, which the gateway decodes to zero —
+// e.g. max_tokens: NaN silently becomes a 0-token request. Name the field in
+// the error so nested paths (ground_truth.<field>[i].start) are locatable.
+function validateFiniteNumber(value: number, fieldName: string): void {
+  if (!Number.isFinite(value)) {
+    throw new TheVeilConfigError(
+      `Invalid ${fieldName}: ${value} — must be a finite number`,
+    );
+  }
+}
+
+function validateMessagesRequest(params: MessagesRequest): void {
+  if (params.max_tokens !== undefined) {
+    validateFiniteNumber(params.max_tokens, 'max_tokens');
+  }
+  if (params.temperature !== undefined) {
+    validateFiniteNumber(params.temperature, 'temperature');
+  }
+  if (params.ground_truth) {
+    for (const [field, annotations] of Object.entries(params.ground_truth)) {
+      // Guard against malformed runtime payloads from JS-only callers or
+      // `any`-typed bodies. TypeScript enforces PIIAnnotation[] at compile
+      // time, but undefined / null / non-array values would otherwise throw a
+      // bare TypeError from .forEach instead of the expected
+      // TheVeilConfigError with a locatable field path.
+      if (!Array.isArray(annotations)) {
+        throw new TheVeilConfigError(
+          `Invalid ground_truth.${field}: expected PIIAnnotation[], got ${annotations === null ? 'null' : typeof annotations}`,
+        );
+      }
+      annotations.forEach((a, i) => {
+        validateFiniteNumber(a.start, `ground_truth.${field}[${i}].start`);
+        validateFiniteNumber(a.end, `ground_truth.${field}[${i}].end`);
+      });
+    }
+  }
+}
+
 export class TheVeil {
   public readonly apiKey: string;
   public readonly baseUrl: string;
   public readonly timeoutMs: number;
 
   constructor(config: TheVeilConfig) {
+    // Runtime capability check: AbortSignal.any landed in Node 18.17.
+    // Older runtimes fail opaquely inside request<T>() with a
+    // "AbortSignal.any is not a function" TypeError — much friendlier to
+    // surface the incompatibility at construction time.
+    if (typeof AbortSignal.any !== 'function') {
+      throw new TheVeilConfigError(
+        'Unsupported runtime: AbortSignal.any is not available. Node 18.17+ (or equivalent) is required.',
+      );
+    }
+
     if (!config || typeof config.apiKey !== 'string' || !API_KEY_PATTERN.test(config.apiKey)) {
       throw new TheVeilConfigError(
         'Invalid apiKey — expected format "dsa_" followed by 32 lowercase hex characters',
@@ -72,8 +121,14 @@ export class TheVeil {
     this.timeoutMs = timeoutMs;
   }
 
-  // Public entry point for /api/v1/proxy/messages.
+  // Public entry point for /api/v1/proxy/messages. The gateway can return
+  // either a sync terminal result (200) or an async processing receipt (202);
+  // callers discriminate on `response.status === 'processing'`.
   async messages(params: MessagesRequest, options?: MessagesOptions): Promise<ProxyResponse> {
+    // Validate finite-ness of numeric fields before JSON.stringify, which
+    // would otherwise silently coerce NaN/Infinity to null on the wire.
+    validateMessagesRequest(params);
+
     return this.request<ProxyResponse>(
       '/api/v1/proxy/messages',
       {
