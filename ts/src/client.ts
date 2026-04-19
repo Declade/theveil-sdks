@@ -6,7 +6,7 @@ import {
 } from './errors.js';
 import type {
   MessagesOptions,
-  MessagesRequest,
+  ProxyMessagesRequest,
   ProxyResponse,
   TheVeilConfig,
 } from './types.js';
@@ -58,7 +58,7 @@ function validateFiniteNumber(value: number, fieldName: string): void {
   }
 }
 
-function validateMessagesRequest(params: MessagesRequest): void {
+function validateProxyMessagesRequest(params: ProxyMessagesRequest): void {
   if (params.max_tokens !== undefined) {
     validateFiniteNumber(params.max_tokens, 'max_tokens');
   }
@@ -68,13 +68,13 @@ function validateMessagesRequest(params: MessagesRequest): void {
   if (params.ground_truth) {
     for (const [field, annotations] of Object.entries(params.ground_truth)) {
       // Guard against malformed runtime payloads from JS-only callers or
-      // `any`-typed bodies. TypeScript enforces PIIAnnotation[] at compile
+      // `any`-typed bodies. TypeScript enforces ProxyPIIAnnotation[] at compile
       // time, but undefined / null / non-array values would otherwise throw a
       // bare TypeError from .forEach instead of the expected
       // TheVeilConfigError with a locatable field path.
       if (!Array.isArray(annotations)) {
         throw new TheVeilConfigError(
-          `Invalid ground_truth.${field}: expected PIIAnnotation[], got ${annotations === null ? 'null' : typeof annotations}`,
+          `Invalid ground_truth.${field}: expected ProxyPIIAnnotation[], got ${annotations === null ? 'null' : typeof annotations}`,
         );
       }
       annotations.forEach((a, i) => {
@@ -124,10 +124,10 @@ export class TheVeil {
   // Public entry point for /api/v1/proxy/messages. The gateway can return
   // either a sync terminal result (200) or an async processing receipt (202);
   // callers discriminate on `response.status === 'processing'`.
-  async messages(params: MessagesRequest, options?: MessagesOptions): Promise<ProxyResponse> {
+  async messages(params: ProxyMessagesRequest, options?: MessagesOptions): Promise<ProxyResponse> {
     // Validate finite-ness of numeric fields before JSON.stringify, which
     // would otherwise silently coerce NaN/Infinity to null on the wire.
-    validateMessagesRequest(params);
+    validateProxyMessagesRequest(params);
 
     return this.request<ProxyResponse>(
       '/api/v1/proxy/messages',

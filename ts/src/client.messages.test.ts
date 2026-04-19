@@ -9,7 +9,7 @@ import {
 } from './errors.js';
 import { server } from './test-server.js';
 import type {
-  MessagesRequest,
+  ProxyMessagesRequest,
   ProxyAcceptedResponse,
   ProxyResponse,
   ProxySyncResponse,
@@ -20,7 +20,7 @@ const VALID_KEY = 'dsa_0123456789abcdef0123456789abcdef';
 const MESSAGES_URL = 'https://gateway.dsaveil.io/api/v1/proxy/messages';
 
 // Minimal valid request body reused across tests.
-const BASIC_REQUEST: MessagesRequest = {
+const BASIC_REQUEST: ProxyMessagesRequest = {
   prompt_template: 'Hello {name}',
   context: { name: 'Example Person' },
   model: 'claude-sonnet-4-5',
@@ -299,10 +299,10 @@ describe('TheVeil.messages() — numeric field finite guard', () => {
     async (_label, value) => {
       try {
         // Simulate a JS-only caller or `any`-typed payload bypassing the
-        // PIIAnnotation[] compile-time contract.
+        // ProxyPIIAnnotation[] compile-time contract.
         await client.messages({
           ...BASIC_REQUEST,
-          ground_truth: { name: value } as unknown as MessagesRequest['ground_truth'],
+          ground_truth: { name: value } as unknown as ProxyMessagesRequest['ground_truth'],
         });
         expect.fail('expected rejection');
       } catch (err) {
@@ -489,11 +489,11 @@ describe('ProxyResponse — compile-time discrimination', () => {
   });
 });
 
-describe('MessagesRequest — compile-time typing', () => {
+describe('ProxyMessagesRequest — compile-time typing', () => {
   it('rejects stream: true (type-level only; runtime is not exercised)', () => {
-    // If the Omit/narrow on MessagesRequest regresses, the suppression
+    // If the Omit/narrow on ProxyMessagesRequest regresses, the suppression
     // below will become unused and typecheck will fail — that is the point.
-    const streamTrueRejected: MessagesRequest = {
+    const streamTrueRejected: ProxyMessagesRequest = {
       prompt_template: 'x',
       context: {},
       // @ts-expect-error streaming not supported this session.
@@ -501,14 +501,14 @@ describe('MessagesRequest — compile-time typing', () => {
     };
 
     // stream: false is explicitly allowed.
-    const streamFalseAllowed: MessagesRequest = {
+    const streamFalseAllowed: ProxyMessagesRequest = {
       prompt_template: 'x',
       context: {},
       stream: false,
     };
 
     // Omitting stream entirely is allowed (it's optional).
-    const streamOmittedAllowed: MessagesRequest = {
+    const streamOmittedAllowed: ProxyMessagesRequest = {
       prompt_template: 'x',
       context: {},
     };

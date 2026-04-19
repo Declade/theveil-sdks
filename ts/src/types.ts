@@ -7,7 +7,7 @@ export interface TheVeilConfig {
 // Mirror of gateway proxyPIIAnnotation (ground-truth annotation for proving_ground mode).
 // TODO(proxy-sync): keep in lockstep with
 //   dual-sandbox-architecture/services/gateway/internal/api/proxy.go:35 (proxyPIIAnnotation).
-export interface PIIAnnotation {
+export interface ProxyPIIAnnotation {
   type: string;
   value: string;
   start: number;
@@ -27,13 +27,13 @@ export interface ProxyRequest {
   relink_response?: boolean;
   mode?: 'live' | 'proving_ground';
   activity_id?: string;
-  ground_truth?: Record<string, PIIAnnotation[]>;
+  ground_truth?: Record<string, ProxyPIIAnnotation[]>;
 }
 
-// MessagesRequest narrows ProxyRequest: streaming is not supported by the
+// ProxyMessagesRequest narrows ProxyRequest: streaming is not supported by the
 // messages() method, so `stream: true` is a compile-time error until a future
 // arc ships the SSE code path.
-export type MessagesRequest = Omit<ProxyRequest, 'stream'> & {
+export type ProxyMessagesRequest = Omit<ProxyRequest, 'stream'> & {
   stream?: false;
 };
 
