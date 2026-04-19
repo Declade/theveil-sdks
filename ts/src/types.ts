@@ -30,6 +30,28 @@ export interface ProxyRequest {
   ground_truth?: Record<string, PIIAnnotation[]>;
 }
 
+// MessagesRequest narrows ProxyRequest: streaming is not supported by the
+// messages() method, so `stream: true` is a compile-time error until a future
+// arc ships the SSE code path.
+export type MessagesRequest = Omit<ProxyRequest, 'stream'> & {
+  stream?: false;
+};
+
+// Per-call knobs for messages(). All optional; compose with the client's
+// defaults at request time.
+export interface MessagesOptions {
+  // Caller-owned abort signal. If it fires, the caller's abort reason is
+  // rethrown verbatim (not wrapped in TheVeilTimeoutError).
+  signal?: AbortSignal;
+  // Per-call timeout in milliseconds. Overrides the client default for this
+  // call only.
+  timeoutMs?: number;
+  // Per-call headers merged on top of client defaults. SDK-owned headers
+  // (x-api-key, content-type) still win — this mirrors the Session 1 header
+  // merge behaviour.
+  headers?: Record<string, string>;
+}
+
 // Minimal typed subset of the /api/v1/proxy/messages response. The gateway
 // emits map[string]interface{} so extra keys (tracevault, veil_evidence,
 // ground_truth_evaluation, etc.) may appear — the index signature keeps them
@@ -44,6 +66,9 @@ export interface ProxyResponse {
   dlp_redacted?: boolean;
   relinked?: boolean;
   error_message?: string;
+  // Present only for pro/enterprise tiers when Veil hints are enabled on the
+  // gateway. The value is the Bridge token-request scoped ID, not the
+  // gateway's internal per-call request UUID used in audit/log lines.
   request_id?: string;
   compliance_trace?: Record<string, unknown>;
   ground_truth_evaluation?: Record<string, unknown>;

@@ -4,7 +4,12 @@ import {
   TheVeilHttpError,
   TheVeilTimeoutError,
 } from './errors.js';
-import type { TheVeilConfig } from './types.js';
+import type {
+  MessagesOptions,
+  MessagesRequest,
+  ProxyResponse,
+  TheVeilConfig,
+} from './types.js';
 
 const API_KEY_PATTERN = /^dsa_[0-9a-f]{32}$/;
 
@@ -29,6 +34,18 @@ function normalizeBaseUrl(raw: string): string {
   return raw.replace(/\/+$/, '');
 }
 
+// Shared validator so constructor-level and per-call timeouts reject the same
+// set of inputs. Returns the validated number; throws TheVeilConfigError on
+// 0, negative, NaN, or Infinity.
+function validateTimeoutMs(value: number, source: string): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new TheVeilConfigError(
+      `Invalid ${source}: ${value} — must be a positive finite number`,
+    );
+  }
+  return value;
+}
+
 export class TheVeil {
   public readonly apiKey: string;
   public readonly baseUrl: string;
@@ -45,25 +62,61 @@ export class TheVeil {
     const rawBaseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
     const baseUrl = normalizeBaseUrl(rawBaseUrl);
 
-    let timeoutMs = DEFAULT_TIMEOUT_MS;
-    if (config.timeoutMs !== undefined) {
-      if (!Number.isFinite(config.timeoutMs) || config.timeoutMs <= 0) {
-        throw new TheVeilConfigError(
-          `Invalid timeoutMs: ${config.timeoutMs} — must be a positive finite number`,
-        );
-      }
-      timeoutMs = config.timeoutMs;
-    }
+    const timeoutMs =
+      config.timeoutMs === undefined
+        ? DEFAULT_TIMEOUT_MS
+        : validateTimeoutMs(config.timeoutMs, 'timeoutMs');
 
     this.apiKey = config.apiKey;
     this.baseUrl = baseUrl;
     this.timeoutMs = timeoutMs;
   }
 
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
+  // Public entry point for /api/v1/proxy/messages.
+  async messages(params: MessagesRequest, options?: MessagesOptions): Promise<ProxyResponse> {
+    return this.request<ProxyResponse>(
+      '/api/v1/proxy/messages',
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+        headers: options?.headers,
+      },
+      {
+        timeoutMs: options?.timeoutMs,
+        signal: options?.signal,
+      },
+    );
+  }
+
+  private async request<T>(
+    path: string,
+    init: RequestInit,
+    opts?: { timeoutMs?: number; signal?: AbortSignal },
+  ): Promise<T> {
     const url = `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const callerSignal = opts?.signal;
+    // Per-call timeoutMs is validated with the same strictness as the
+    // constructor — 0, negative, NaN, and Infinity all throw instead of
+    // silently falling back to the client default.
+    const timeoutMs =
+      opts?.timeoutMs === undefined
+        ? this.timeoutMs
+        : validateTimeoutMs(opts.timeoutMs, 'options.timeoutMs');
+
+    // Fail fast on an already-aborted caller signal so we don't spend a fetch
+    // round-trip just to throw the same reason.
+    if (callerSignal?.aborted) {
+      throw callerSignal.reason;
+    }
+
+    const timeoutController = new AbortController();
+    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+    // AbortSignal.any (Node 20.3+) propagates whichever signal aborts first.
+    // Its `.reason` is locked to the first source's reason and never changes,
+    // which is how we distinguish caller-initiated aborts from timeouts below.
+    const composedSignal: AbortSignal = callerSignal
+      ? AbortSignal.any([callerSignal, timeoutController.signal])
+      : timeoutController.signal;
 
     // Normalize caller headers via the Headers API — this lowercases all header
     // names per the fetch spec, so the SDK-owned keys below unambiguously win.
@@ -84,7 +137,7 @@ export class TheVeil {
       const response = await fetch(url, {
         ...init,
         headers: mergedHeaders,
-        signal: controller.signal,
+        signal: composedSignal,
       });
 
       const text = await response.text();
@@ -109,9 +162,19 @@ export class TheVeil {
       if (err instanceof TheVeilError) {
         throw err;
       }
-      if (err instanceof Error && err.name === 'AbortError') {
+      // Abort path: if our composed signal fired, identity-compare its reason
+      // against the caller's to learn which source aborted FIRST (not "who
+      // ended up aborted by catch-time"). AbortSignal.any locks `.reason` to
+      // the first source at composite-abort time and never updates it, so a
+      // late caller abort after a timeout cannot misattribute blame.
+      if (composedSignal.aborted) {
+        if (callerSignal && composedSignal.reason === callerSignal.reason) {
+          // Rethrow the caller's reason verbatim so they see the same value
+          // they passed to controller.abort(reason).
+          throw callerSignal.reason;
+        }
         throw new TheVeilTimeoutError(
-          `Request timed out after ${this.timeoutMs}ms`,
+          `Request timed out after ${timeoutMs}ms`,
           { cause: err },
         );
       }
