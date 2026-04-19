@@ -1,0 +1,20 @@
+name: CI
+
+# Shared CI pipeline for the theveil-sdks monorepo.
+#
+# Language-specific jobs land here as each language arc ships:
+#   - TypeScript: lint + typecheck + test  (ts/)
+#   - Python:     ruff + mypy + pytest     (python/)
+#   - Go:         go vet + go test         (go/)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  scaffolding:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "CI pipeline — language-specific jobs land with each language arc"

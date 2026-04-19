@@ -1,0 +1,38 @@
+{
+  "name": "@dsaveil/theveil",
+  "version": "0.1.0",
+  "description": "The Veil — privacy-preserving AI infrastructure client for TypeScript",
+  "license": "MIT",
+  "author": "Declade",
+  "homepage": "https://dsaveil.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Declade/theveil-sdks.git",
+    "directory": "ts"
+  },
+  "bugs": {
+    "url": "https://github.com/Declade/theveil-sdks/issues"
+  },
+  "keywords": [
+    "privacy",
+    "gdpr",
+    "llm",
+    "ai",
+    "pii",
+    "pseudonymization",
+    "eu-ai-act",
+    "anthropic",
+    "openai"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": false
+}

@@ -1,0 +1,43 @@
+name: Publish TypeScript
+
+# Trigger: tag push v* — publishes @dsaveil/theveil to npm with provenance
+#
+# Placeholder only. Wired up in the SDK publishing arc.
+#
+# Intended structure (commented skeleton):
+#
+# on:
+#   push:
+#     tags:
+#       - 'v*'
+#
+# jobs:
+#   publish:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: read
+#       id-token: write
+#     defaults:
+#       run:
+#         working-directory: ts
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: '20'
+#           registry-url: 'https://registry.npmjs.org'
+#       - run: npm ci
+#       - run: npm run build
+#       - run: npm publish --provenance --access public
+#         env:
+#           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "publish-ts placeholder — wired up in SDK publishing arc"

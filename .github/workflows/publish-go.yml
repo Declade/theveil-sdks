@@ -1,0 +1,46 @@
+name: Publish Go
+
+# Trigger: tag push go/v* at same commit as v* — registers Go module on proxy.golang.org
+#
+# Placeholder only. Wired up in the SDK publishing arc.
+#
+# Dual-tag mechanism:
+#   - v0.1.0       — canonical version tag consumed by TS (npm) + Python (PyPI)
+#   - go/v0.1.0    — Go submodule tag on the same commit; required because the Go
+#                    module lives under the go/ subdirectory of this monorepo.
+#   Both tags MUST point at the same commit so version parity holds across languages.
+#   Publishing a Go module = pushing the go/v* tag and pinging proxy.golang.org so the
+#   module + version are cached on the module proxy. No registry credentials needed.
+#
+# Intended structure (commented skeleton):
+#
+# on:
+#   push:
+#     tags:
+#       - 'go/v*'
+#
+# jobs:
+#   publish:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-go@v5
+#         with:
+#           go-version: '1.22'
+#       - name: Verify module builds
+#         working-directory: go
+#         run: go build ./...
+#       - name: Warm proxy.golang.org
+#         run: |
+#           TAG="${GITHUB_REF_NAME#go/}"
+#           curl -fsSL "https://proxy.golang.org/github.com/declade/theveil-sdks/go/@v/${TAG}.info"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "publish-go placeholder — wired up in SDK publishing arc"
