@@ -2,7 +2,10 @@
 
 ## Status
 
-Pre-1.0 scaffolding. Client implementation not yet present.
+Pre-1.0. The `TheVeil` client ships construction-time `apiKey` validation,
+`baseUrl` normalization with scheme guards, per-call timeout composition,
+the `client.messages()` proxy endpoint, and four typed error classes. The
+public API surface is still in flux — see [CHANGELOG](../CHANGELOG.md).
 
 ## Install
 

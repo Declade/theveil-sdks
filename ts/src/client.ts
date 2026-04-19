@@ -86,7 +86,11 @@ function validateProxyMessagesRequest(params: ProxyMessagesRequest): void {
 }
 
 export class TheVeil {
-  public readonly apiKey: string;
+  // Private class field: excluded from JSON.stringify and util.inspect, and
+  // unreachable via `client.apiKey` at both compile time and runtime. Keeps
+  // the key out of accidental log lines, structured-clone payloads, and
+  // serialized error contexts.
+  readonly #apiKey: string;
   public readonly baseUrl: string;
   public readonly timeoutMs: number;
 
@@ -116,7 +120,7 @@ export class TheVeil {
         ? DEFAULT_TIMEOUT_MS
         : validateTimeoutMs(config.timeoutMs, 'timeoutMs');
 
-    this.apiKey = config.apiKey;
+    this.#apiKey = config.apiKey;
     this.baseUrl = baseUrl;
     this.timeoutMs = timeoutMs;
   }
@@ -184,7 +188,7 @@ export class TheVeil {
     }
     const mergedHeaders: Record<string, string> = {
       ...callerHeaders,
-      'x-api-key': this.apiKey,
+      'x-api-key': this.#apiKey,
       'content-type': 'application/json',
     };
 
