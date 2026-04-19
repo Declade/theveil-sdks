@@ -1,2 +1,3 @@
-// @dsaveil/theveil — scaffolding only. Client implementation lands in the SDK publishing arc.
-export const __scaffold = true as const;
+export { TheVeil } from './client.js';
+export { TheVeilError, TheVeilConfigError, TheVeilHttpError } from './errors.js';
+export type { TheVeilConfig, ProxyRequest, ProxyResponse, PIIAnnotation } from './types.js';
