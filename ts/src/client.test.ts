@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TheVeil } from './client.js';
-import { TheVeilConfigError, TheVeilError, TheVeilTimeoutError } from './errors.js';
+import {
+  TheVeilConfigError,
+  TheVeilError,
+  TheVeilHttpError,
+  TheVeilTimeoutError,
+} from './errors.js';
 
 const VALID_KEY = 'dsa_0123456789abcdef0123456789abcdef';
 
@@ -167,6 +172,38 @@ describe('TheVeil.request() — error wrapping', () => {
       expect(err).toBeInstanceOf(TheVeilError);
       expect(err).not.toBeInstanceOf(TheVeilTimeoutError);
       expect((err as TheVeilError).cause).toBe(underlying);
+    }
+  });
+
+  it('surfaces a non-2xx response as TheVeilHttpError without re-wrapping via the generic catch', async () => {
+    // Invariant: the `err instanceof TheVeilError` guard in request()'s catch
+    // block must rethrow TheVeilHttpError unchanged. If a future refactor drops
+    // that guard, HTTP errors would be wrapped in TheVeilError('Request failed')
+    // with the HttpError moved onto `.cause` — this test is the tripwire.
+    const upstreamBody = { error: 'upstream failed' };
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(
+        new Response(JSON.stringify(upstreamBody), {
+          status: 500,
+          statusText: 'Internal Server Error',
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    const client = new TheVeil({ apiKey: VALID_KEY });
+    try {
+      await asInternal(client).request('/boom', {});
+      expect.fail('expected request to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TheVeilHttpError);
+      expect(err).not.toBeInstanceOf(TheVeilTimeoutError);
+      const httpErr = err as TheVeilHttpError;
+      expect(httpErr.status).toBe(500);
+      expect(httpErr.body).toEqual(upstreamBody);
+      // The invariant: the generic catch must NOT have re-wrapped this error,
+      // which would have moved the original onto `.cause`.
+      expect(httpErr.cause).toBeUndefined();
     }
   });
 });
