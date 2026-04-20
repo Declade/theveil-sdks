@@ -324,17 +324,21 @@ describe('verifyCertificate — ordering + error shape', () => {
 
 describe('verifyCertificate — Go-oracle cross-check (end-to-end)', () => {
   // This is the authoritative "does the TS port agree with Go end-to-end"
-  // test. The fixture is produced by gen-cert-oracle.go (committed under
-  // __fixtures__/), which runs the actual Go pkg/veil.CanonicalJSON on
-  // the 7-field signable map and signs with the committed stable test
-  // keypair (test-witness-keypair.json). Any drift between the Go
-  // assembler's signing path and the TS deriveWitnessSignedBytes path
-  // fails this test immediately — which is how we caught the earlier
-  // integer-vs-string encoding bug for overall_verdict.
+  // test. The fixture (cert-go-signed-reference.json) is produced by the
+  // Go oracle at
+  //   dual-sandbox-architecture/services/veil-witness/internal/testoracle/
+  //   gen-cert-oracle.go
+  // which invokes the real assembler.Assemble pipeline (including
+  // pkg/veil.CanonicalJSON + Ed25519 signing) with fixed clock + fixed
+  // ID generator. Any drift between the Go assembler's signing path and
+  // the TS deriveWitnessSignedBytes path fails this test immediately —
+  // which is how we caught the earlier integer-vs-string encoding bug
+  // for overall_verdict.
   //
-  // If this test ever fails after a gateway change, re-run
-  //   cd /path/to/dual-sandbox-architecture
-  //   go run /path/to/theveil-sdks/ts/src/verify-certificate/__fixtures__/gen-cert-oracle.go
+  // If this test ever fails after a gateway change, re-run the oracle
+  // per the regen instructions at
+  //   dual-sandbox-architecture/services/veil-witness/internal/testoracle/
+  //   README.md
   // and investigate: the Go side changed its signable-field encoding and
   // the TS port must match. Do NOT paper over by regenerating both.
   it('TS verifyCertificate accepts a Go-oracle-signed cert', async () => {

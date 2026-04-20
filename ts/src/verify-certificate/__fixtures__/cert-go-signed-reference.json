@@ -1,86 +1,86 @@
 {
-  "certificate_id": "veil_oracle_0000000000000001",
-  "request_id": "req_oracle_0000000000000001",
-  "protocol_version": 2,
-  "claims": [
+  "certificate_id":  "veil_oracle_0000000000000001",
+  "request_id":  "req_oracle_0000000000000001",
+  "protocol_version":  2,
+  "claims":  [
     {
-      "claim_id": "clm_oracle_dsa-bridge",
-      "request_id": "req_oracle_0000000000000001",
-      "service_id": "dsa-bridge",
-      "claim_type": "CLAIM_TYPE_TOKEN_GENERATED",
-      "data_seen": [],
-      "data_not_seen": [],
-      "canonical_payload": "eyJjbGFpbV9pZCI6ImNsbV9vcmFjbGVfZHNhLWJyaWRnZSIsImNsYWltX3R5cGUiOiJUT0tFTl9HRU5FUkFURUQiLCJkYXRhX25vdF9zZWVuIjpbXSwiZGF0YV9zZWVuIjpbXSwicGF5bG9hZCI6eyJlbmNyeXB0aW9uX2VuYWJsZWQiOnRydWUsImVwb2NoIjoiMCIsInRva2VuX2hhc2giOiJBQUE9In0sInJlcXVlc3RfaWQiOiJyZXFfb3JhY2xlXzAwMDAwMDAwMDAwMDAwMDEiLCJzZXJ2aWNlX2lkIjoiZHNhLWJyaWRnZSIsInRpbWVzdGFtcCI6IjIwMjYtMDQtMjBUMDU6MjQ6MTIuNzEwMzIxNzIxWiJ9",
-      "timestamp": "2026-04-20T05:24:12.710321721Z",
-      "signature": "BORToNX1usxtV5D55q7GeAw8EFsr+jbri2cjwguQCeszhM+NRlU73ja1M2HGn0euJMdgea6LBmEwed3xVCStDQ=="
+      "claim_id":  "clm_oracle_dsa-bridge",
+      "request_id":  "req_oracle_0000000000000001",
+      "service_id":  "dsa-bridge",
+      "claim_type":  "CLAIM_TYPE_TOKEN_GENERATED",
+      "data_seen":  [],
+      "data_not_seen":  [],
+      "canonical_payload":  "eyJjbGFpbV9pZCI6ImNsbV9vcmFjbGVfZHNhLWJyaWRnZSIsImNsYWltX3R5cGUiOiJUT0tFTl9HRU5FUkFURUQiLCJkYXRhX25vdF9zZWVuIjpbXSwiZGF0YV9zZWVuIjpbXSwicGF5bG9hZCI6eyJlbmNyeXB0aW9uX2VuYWJsZWQiOnRydWUsImVwb2NoIjoiMCIsInRva2VuX2hhc2giOiJBQUE9In0sInJlcXVlc3RfaWQiOiJyZXFfb3JhY2xlXzAwMDAwMDAwMDAwMDAwMDEiLCJzZXJ2aWNlX2lkIjoiZHNhLWJyaWRnZSIsInRpbWVzdGFtcCI6IjIwMjYtMDQtMjBUMDU6MjQ6MTIuNzEwMzIxNzIxWiJ9",
+      "timestamp":  "2026-04-20T05:24:12.710321721Z",
+      "signature":  "BORToNX1usxtV5D55q7GeAw8EFsr+jbri2cjwguQCeszhM+NRlU73ja1M2HGn0euJMdgea6LBmEwed3xVCStDQ=="
     },
     {
-      "claim_id": "clm_oracle_dsa-sanitizer",
-      "request_id": "req_oracle_0000000000000001",
-      "service_id": "dsa-sanitizer",
-      "claim_type": "CLAIM_TYPE_PII_SANITIZED",
-      "data_seen": [],
-      "data_not_seen": [],
-      "canonical_payload": "eyJjbGFpbV9pZCI6ImNsbV9vcmFjbGVfZHNhLXNhbml0aXplciIsImNsYWltX3R5cGUiOiJQSUlfU0FOSVRJWkVEIiwiZGF0YV9ub3Rfc2VlbiI6W10sImRhdGFfc2VlbiI6W10sInBheWxvYWQiOnsibGF5ZXJzX2FjdGl2ZSI6WyJrbm93bl9lbnRpdHlfbWF0Y2hpbmciLCJwcmVzaWRpb19uZXIiXSwicGlpX2VudGl0aWVzX2ZvdW5kIjoxLCJyZWRhY3Rpb25fbWFuaWZlc3RfaGFzaCI6IkFBQT0ifSwicmVxdWVzdF9pZCI6InJlcV9vcmFjbGVfMDAwMDAwMDAwMDAwMDAwMSIsInNlcnZpY2VfaWQiOiJkc2Etc2FuaXRpemVyIiwidGltZXN0YW1wIjoiMjAyNi0wNC0yMFQwNToyNDoxMi43MTAzMjE3MjFaIn0=",
-      "timestamp": "2026-04-20T05:24:12.710321721Z",
-      "signature": "AT2h61ERHyS59ZL41cbYVvYS647dpv1OryhYmMZUS+tK95i9BiTm96OrEH7J6IhJ14lgRDCyjyCWRxHIi6iFDg=="
+      "claim_id":  "clm_oracle_dsa-sanitizer",
+      "request_id":  "req_oracle_0000000000000001",
+      "service_id":  "dsa-sanitizer",
+      "claim_type":  "CLAIM_TYPE_PII_SANITIZED",
+      "data_seen":  [],
+      "data_not_seen":  [],
+      "canonical_payload":  "eyJjbGFpbV9pZCI6ImNsbV9vcmFjbGVfZHNhLXNhbml0aXplciIsImNsYWltX3R5cGUiOiJQSUlfU0FOSVRJWkVEIiwiZGF0YV9ub3Rfc2VlbiI6W10sImRhdGFfc2VlbiI6W10sInBheWxvYWQiOnsibGF5ZXJzX2FjdGl2ZSI6WyJrbm93bl9lbnRpdHlfbWF0Y2hpbmciLCJwcmVzaWRpb19uZXIiXSwicGlpX2VudGl0aWVzX2ZvdW5kIjoxLCJyZWRhY3Rpb25fbWFuaWZlc3RfaGFzaCI6IkFBQT0ifSwicmVxdWVzdF9pZCI6InJlcV9vcmFjbGVfMDAwMDAwMDAwMDAwMDAwMSIsInNlcnZpY2VfaWQiOiJkc2Etc2FuaXRpemVyIiwidGltZXN0YW1wIjoiMjAyNi0wNC0yMFQwNToyNDoxMi43MTAzMjE3MjFaIn0=",
+      "timestamp":  "2026-04-20T05:24:12.710321721Z",
+      "signature":  "AT2h61ERHyS59ZL41cbYVvYS647dpv1OryhYmMZUS+tK95i9BiTm96OrEH7J6IhJ14lgRDCyjyCWRxHIi6iFDg=="
     },
     {
-      "claim_id": "clm_oracle_dsa-ai",
-      "request_id": "req_oracle_0000000000000001",
-      "service_id": "dsa-ai",
-      "claim_type": "CLAIM_TYPE_INFERENCE_COMPLETED",
-      "data_seen": [],
-      "data_not_seen": [],
-      "canonical_payload": "eyJjbGFpbV9pZCI6ImNsbV9vcmFjbGVfZHNhLWFpIiwiY2xhaW1fdHlwZSI6IklORkVSRU5DRV9DT01QTEVURUQiLCJkYXRhX25vdF9zZWVuIjpbXSwiZGF0YV9zZWVuIjpbXSwicGF5bG9hZCI6eyJpc29sYXRpb25fcHJvYmUiOiJWRVJJRklFRCIsIm1vZGVsX3VzZWQiOiJjbGF1ZGUtc29ubmV0LTQtMjAyNTA1MTQiLCJyZXNwb25zZV9oYXNoIjoiQUFBPSJ9LCJyZXF1ZXN0X2lkIjoicmVxX29yYWNsZV8wMDAwMDAwMDAwMDAwMDAxIiwic2VydmljZV9pZCI6ImRzYS1haSIsInRpbWVzdGFtcCI6IjIwMjYtMDQtMjBUMDU6MjQ6MTIuNzEwMzIxNzIxWiJ9",
-      "timestamp": "2026-04-20T05:24:12.710321721Z",
-      "signature": "kU1+2AFBAyWHq0BJFGIf0UCuR6IylmLEsnadq348b61R6Q+DC7i1nEyRmAXqz91eSQ7ILBmBZMcRxalJ4Kf1CQ=="
+      "claim_id":  "clm_oracle_dsa-ai",
+      "request_id":  "req_oracle_0000000000000001",
+      "service_id":  "dsa-ai",
+      "claim_type":  "CLAIM_TYPE_INFERENCE_COMPLETED",
+      "data_seen":  [],
+      "data_not_seen":  [],
+      "canonical_payload":  "eyJjbGFpbV9pZCI6ImNsbV9vcmFjbGVfZHNhLWFpIiwiY2xhaW1fdHlwZSI6IklORkVSRU5DRV9DT01QTEVURUQiLCJkYXRhX25vdF9zZWVuIjpbXSwiZGF0YV9zZWVuIjpbXSwicGF5bG9hZCI6eyJpc29sYXRpb25fcHJvYmUiOiJWRVJJRklFRCIsIm1vZGVsX3VzZWQiOiJjbGF1ZGUtc29ubmV0LTQtMjAyNTA1MTQiLCJyZXNwb25zZV9oYXNoIjoiQUFBPSJ9LCJyZXF1ZXN0X2lkIjoicmVxX29yYWNsZV8wMDAwMDAwMDAwMDAwMDAxIiwic2VydmljZV9pZCI6ImRzYS1haSIsInRpbWVzdGFtcCI6IjIwMjYtMDQtMjBUMDU6MjQ6MTIuNzEwMzIxNzIxWiJ9",
+      "timestamp":  "2026-04-20T05:24:12.710321721Z",
+      "signature":  "kU1+2AFBAyWHq0BJFGIf0UCuR6IylmLEsnadq348b61R6Q+DC7i1nEyRmAXqz91eSQ7ILBmBZMcRxalJ4Kf1CQ=="
     },
     {
-      "claim_id": "clm_oracle_dsa-audit",
-      "request_id": "req_oracle_0000000000000001",
-      "service_id": "dsa-audit",
-      "claim_type": "CLAIM_TYPE_EVENTS_RECORDED",
-      "data_seen": [],
-      "data_not_seen": [],
-      "canonical_payload": "eyJjbGFpbV9pZCI6ImNsbV9vcmFjbGVfZHNhLWF1ZGl0IiwiY2xhaW1fdHlwZSI6IkVWRU5UU19SRUNPUkRFRCIsImRhdGFfbm90X3NlZW4iOltdLCJkYXRhX3NlZW4iOltdLCJwYXlsb2FkIjp7ImNoYWluX2hlYWRfaGFzaCI6IkFBQT0iLCJjaGFpbl9sZW5ndGgiOjEsImV2ZW50X2lkcyI6WyJlMSJdLCJwcmV2aW91c19jaGFpbl9oYXNoIjoiIn0sInJlcXVlc3RfaWQiOiJyZXFfb3JhY2xlXzAwMDAwMDAwMDAwMDAwMDEiLCJzZXJ2aWNlX2lkIjoiZHNhLWF1ZGl0IiwidGltZXN0YW1wIjoiMjAyNi0wNC0yMFQwNToyNDoxMi43MTAzMjE3MjFaIn0=",
-      "timestamp": "2026-04-20T05:24:12.710321721Z",
-      "signature": "ML4k1MYO7CTUMuGoczdKTAnTDYi+WOBPvWecALvEV/akYn8/JveWCYenUuhSzS6C0sCsgsNC2VrRYL43tCjfDA=="
+      "claim_id":  "clm_oracle_dsa-audit",
+      "request_id":  "req_oracle_0000000000000001",
+      "service_id":  "dsa-audit",
+      "claim_type":  "CLAIM_TYPE_EVENTS_RECORDED",
+      "data_seen":  [],
+      "data_not_seen":  [],
+      "canonical_payload":  "eyJjbGFpbV9pZCI6ImNsbV9vcmFjbGVfZHNhLWF1ZGl0IiwiY2xhaW1fdHlwZSI6IkVWRU5UU19SRUNPUkRFRCIsImRhdGFfbm90X3NlZW4iOltdLCJkYXRhX3NlZW4iOltdLCJwYXlsb2FkIjp7ImNoYWluX2hlYWRfaGFzaCI6IkFBQT0iLCJjaGFpbl9sZW5ndGgiOjEsImV2ZW50X2lkcyI6WyJlMSJdLCJwcmV2aW91c19jaGFpbl9oYXNoIjoiIn0sInJlcXVlc3RfaWQiOiJyZXFfb3JhY2xlXzAwMDAwMDAwMDAwMDAwMDEiLCJzZXJ2aWNlX2lkIjoiZHNhLWF1ZGl0IiwidGltZXN0YW1wIjoiMjAyNi0wNC0yMFQwNToyNDoxMi43MTAzMjE3MjFaIn0=",
+      "timestamp":  "2026-04-20T05:24:12.710321721Z",
+      "signature":  "ML4k1MYO7CTUMuGoczdKTAnTDYi+WOBPvWecALvEV/akYn8/JveWCYenUuhSzS6C0sCsgsNC2VrRYL43tCjfDA=="
     }
   ],
-  "verification": {
-    "signatures_valid": true,
-    "completeness": "COMPLETENESS_FULL",
-    "missing_services": [],
-    "temporal_consistent": true,
-    "data_visibility_consistent": true,
-    "isolation_verified": true,
-    "qi_score": null,
-    "overall_verdict": "VERDICT_VERIFIED"
+  "verification":  {
+    "signatures_valid":  true,
+    "completeness":  "COMPLETENESS_FULL",
+    "missing_services":  [],
+    "temporal_consistent":  true,
+    "data_visibility_consistent":  true,
+    "isolation_verified":  true,
+    "qi_score":  null,
+    "overall_verdict":  "VERDICT_VERIFIED"
   },
-  "witness_signature": "ZYjwC15xTx20fO+iMz18qcPpMb943ipGki2Mw0Uh/Y2Oa3hybMu8/JmlEPB8hu40f+xT+pAFKXhx3/pUrIQTAw==",
-  "witness_key_id": "witness_v1",
-  "attestation": {
-    "timestamp": null,
-    "transparency_log": null,
-    "notary": {
-      "provider": "dsa-veil-witness",
-      "notary_signature": "ZYjwC15xTx20fO+iMz18qcPpMb943ipGki2Mw0Uh/Y2Oa3hybMu8/JmlEPB8hu40f+xT+pAFKXhx3/pUrIQTAw==",
-      "notary_public_key_id": "witness_v1",
-      "checks_performed": [
+  "witness_signature":  "ZYjwC15xTx20fO+iMz18qcPpMb943ipGki2Mw0Uh/Y2Oa3hybMu8/JmlEPB8hu40f+xT+pAFKXhx3/pUrIQTAw==",
+  "witness_key_id":  "witness_v1",
+  "attestation":  {
+    "timestamp":  null,
+    "transparency_log":  null,
+    "notary":  {
+      "provider":  "dsa-veil-witness",
+      "notary_signature":  "ZYjwC15xTx20fO+iMz18qcPpMb943ipGki2Mw0Uh/Y2Oa3hybMu8/JmlEPB8hu40f+xT+pAFKXhx3/pUrIQTAw==",
+      "notary_public_key_id":  "witness_v1",
+      "checks_performed":  [
         "canonical_json_signing"
       ],
-      "attested_at": null
+      "attested_at":  null
     }
   },
-  "issued_at": "2026-04-20T05:24:12.710321721Z",
-  "formal_verification": null,
-  "audit_integrity": null,
-  "privacy_budget": null,
-  "anchor_status": {
-    "status": "ANCHOR_STATUS_ANCHORED",
-    "attempts": 1,
-    "last_error": "",
-    "human_note": ""
+  "issued_at":  "2026-04-20T05:24:12.710321721Z",
+  "formal_verification":  null,
+  "audit_integrity":  null,
+  "privacy_budget":  null,
+  "anchor_status":  {
+    "status":  "ANCHOR_STATUS_ANCHORED",
+    "attempts":  1,
+    "last_error":  "",
+    "human_note":  ""
   }
 }
