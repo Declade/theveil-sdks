@@ -1,0 +1,264 @@
+package theveil
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+)
+
+func basicMessagesRequest() MessagesRequest {
+	maxTokens := 256
+	return MessagesRequest{
+		PromptTemplate: "hello {customer}",
+		Context:        map[string]string{"customer": "Ada"},
+		Model:          "claude-opus-4-7",
+		MaxTokens:      &maxTokens,
+	}
+}
+
+// -- Happy path: sync --------------------------------------------------
+
+func TestMessages_SyncCompleted(t *testing.T) {
+	body := map[string]any{
+		"status":     "JOB_STATUS_COMPLETED",
+		"model_used": "claude-opus-4-7",
+		"latency_ms": 1234,
+		"result":     map[string]any{"content": "Hello, Ada."},
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q", r.Method)
+		}
+		if r.URL.Path != "/api/v1/proxy/messages" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		if r.Header.Get("x-api-key") != validAPIKey {
+			t.Error("x-api-key header missing")
+		}
+		if r.Header.Get("content-type") != "application/json" {
+			t.Error("content-type header missing")
+		}
+		reqBody, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(reqBody), `"prompt_template":"hello {customer}"`) {
+			t.Errorf("request body missing prompt_template: %s", string(reqBody))
+		}
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(body)
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	resp, err := c.Messages(context.Background(), basicMessagesRequest())
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	sync, ok := resp.(*ProxySyncResponse)
+	if !ok {
+		t.Fatalf("want *ProxySyncResponse, got %T", resp)
+	}
+	if sync.Status != "JOB_STATUS_COMPLETED" {
+		t.Errorf("status = %q", sync.Status)
+	}
+	if sync.ModelUsed != "claude-opus-4-7" {
+		t.Errorf("model_used = %q", sync.ModelUsed)
+	}
+	if sync.LatencyMs != 1234 {
+		t.Errorf("latency_ms = %d", sync.LatencyMs)
+	}
+}
+
+func TestMessages_SyncFailed(t *testing.T) {
+	body := map[string]any{
+		"status":        "JOB_STATUS_FAILED",
+		"model_used":    "claude-opus-4-7",
+		"latency_ms":    42,
+		"error_message": "upstream model timeout",
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(body)
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	resp, err := c.Messages(context.Background(), basicMessagesRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sync, ok := resp.(*ProxySyncResponse)
+	if !ok {
+		t.Fatalf("want *ProxySyncResponse, got %T", resp)
+	}
+	if sync.Status != "JOB_STATUS_FAILED" {
+		t.Errorf("status = %q", sync.Status)
+	}
+	if sync.ErrorMessage != "upstream model timeout" {
+		t.Errorf("error_message = %q", sync.ErrorMessage)
+	}
+}
+
+// -- Async 202 discriminator ---------------------------------------------
+
+func TestMessages_Async202ReturnsAcceptedResponse(t *testing.T) {
+	body := map[string]any{
+		"status":     "processing",
+		"job_id":     "job_abc",
+		"request_id": "req_xyz",
+		"status_url": "https://gateway.example.com/jobs/job_abc",
+		"veil": map[string]any{
+			"status":          "pending",
+			"certificate_url": "https://gateway.example.com/api/v1/veil/certificate/req_xyz",
+			"summary_url":     "https://gateway.example.com/api/v1/veil/certificate/req_xyz/summary",
+		},
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(body)
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	resp, err := c.Messages(context.Background(), basicMessagesRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	async, ok := resp.(*ProxyAcceptedResponse)
+	if !ok {
+		t.Fatalf("want *ProxyAcceptedResponse, got %T", resp)
+	}
+	if async.Status != "processing" {
+		t.Errorf("status = %q", async.Status)
+	}
+	if async.JobID != "job_abc" {
+		t.Errorf("job_id = %q", async.JobID)
+	}
+	if async.RequestID != "req_xyz" {
+		t.Errorf("request_id = %q", async.RequestID)
+	}
+	if async.Veil == nil || async.Veil.Status != "pending" {
+		t.Errorf("veil.status missing: %+v", async.Veil)
+	}
+}
+
+// -- Error mapping ------------------------------------------------------
+
+func TestMessages_401RaisesHTTPError(t *testing.T) {
+	body := map[string]any{
+		"error": map[string]any{"code": "invalid_api_key", "message": "no"},
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(401)
+		_ = json.NewEncoder(w).Encode(body)
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.Messages(context.Background(), basicMessagesRequest())
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("want HTTPError, got %T", err)
+	}
+	if httpErr.Status != 401 {
+		t.Errorf("status = %d", httpErr.Status)
+	}
+}
+
+// -- Per-call options ---------------------------------------------------
+
+func TestMessages_PerCallHeadersMerge_SDKWins(t *testing.T) {
+	var observedAPI, observedCorr string
+	body := map[string]any{
+		"status":     "JOB_STATUS_COMPLETED",
+		"model_used": "x",
+		"latency_ms": 1,
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		observedAPI = r.Header.Get("x-api-key")
+		observedCorr = r.Header.Get("x-correlation-id")
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(body)
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.Messages(
+		context.Background(),
+		basicMessagesRequest(),
+		WithCallHeader("x-correlation-id", "corr_abc"),
+		WithCallHeader("x-api-key", "dsa_"+strings.Repeat("f", 32)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observedCorr != "corr_abc" {
+		t.Errorf("x-correlation-id = %q", observedCorr)
+	}
+	if observedAPI != validAPIKey {
+		t.Errorf("x-api-key = %q, want SDK-owned", observedAPI)
+	}
+}
+
+func TestMessages_PerCallTimeoutOverrides(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		// Bounded wait — server-side r.Context() cancellation propagation
+		// can lag depending on keep-alive / transport pool state. The
+		// client-side deadline fires long before this bound, producing the
+		// TimeoutError we assert on.
+		select {
+		case <-r.Context().Done():
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.Messages(
+		context.Background(),
+		basicMessagesRequest(),
+		WithCallTimeout(10*time.Millisecond),
+	)
+	var timeoutErr *TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		t.Fatalf("want TimeoutError, got %T", err)
+	}
+}
+
+// -- Malformed 200 body -------------------------------------------------
+
+func TestMessages_Malformed200_BodyPassthrough(t *testing.T) {
+	// Go's JSON unmarshal is permissive: missing fields zero-value the struct.
+	// Thin-transport contract: fetch succeeds; downstream logic decides
+	// what to do with an incomplete ProxySyncResponse.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		// Non-processing, non-COMPLETED body — missing model_used, latency_ms.
+		_, _ = w.Write([]byte(`{"status": "JOB_STATUS_COMPLETED"}`))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	resp, err := c.Messages(context.Background(), basicMessagesRequest())
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	sync, ok := resp.(*ProxySyncResponse)
+	if !ok {
+		t.Fatalf("want *ProxySyncResponse, got %T", resp)
+	}
+	if sync.Status != "JOB_STATUS_COMPLETED" {
+		t.Errorf("status = %q", sync.Status)
+	}
+	if sync.ModelUsed != "" {
+		t.Errorf("model_used should be empty (zero value)")
+	}
+	if sync.LatencyMs != 0 {
+		t.Errorf("latency_ms should be zero")
+	}
+}
