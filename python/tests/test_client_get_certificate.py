@@ -1,0 +1,268 @@
+"""TheVeil.get_certificate() — HTTP-level tests via respx.
+
+Port of client.getCertificate.test.ts at the observable level. Language
+divergences:
+
+* No caller-initiated abort/cancel — v1 sync client has timeout only
+  (locked decision 2026-04-20 §3). Caller-abort test omitted; timeout
+  test retained.
+
+* Malformed 200 body: TS returns raw text typed as ``VeilCertificate``
+  (thin-transport, passes through). Python calls
+  ``VeilCertificate.model_validate(body)`` at deserialize time and
+  wraps ``ValidationError`` as ``TheVeilHttpError(status=200)`` so the
+  caller still gets a typed SDK error. Both languages surface a typed
+  error to the caller; Python fails at fetch, TS at ``verify_certificate``.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import httpx
+import pytest
+import respx
+
+from theveil import (
+    MessagesOptions,
+    TheVeil,
+    TheVeilConfig,
+    TheVeilConfigError,
+    TheVeilError,
+    TheVeilHttpError,
+    TheVeilTimeoutError,
+)
+
+VALID_KEY = "dsa_0123456789abcdef0123456789abcdef"
+BASE = "https://gateway.dsaveil.io"
+CERT_PATH_PREFIX = "/api/v1/veil/certificate/"
+
+
+def _client() -> TheVeil:
+    return TheVeil(TheVeilConfig(api_key=VALID_KEY))
+
+
+class TestHappyPath:
+    @respx.mock
+    def test_returns_cert_body_deep_equal(
+        self, cert_valid_anchored: dict[str, Any]
+    ) -> None:
+        request_id = cert_valid_anchored["request_id"]
+        route = respx.get(f"{BASE}{CERT_PATH_PREFIX}{request_id}").respond(
+            200, json=cert_valid_anchored
+        )
+        client = _client()
+        cert = client.get_certificate(request_id)
+        assert route.called
+        # Deep-compare model fields against the fixture source; fields the
+        # Pydantic model declares with coercion are structurally equal.
+        assert cert.certificate_id == cert_valid_anchored["certificate_id"]
+        assert cert.request_id == cert_valid_anchored["request_id"]
+        assert cert.protocol_version == 2
+        assert cert.witness_key_id == "witness_v1"
+        assert cert.witness_signature == cert_valid_anchored["witness_signature"]
+
+    @respx.mock
+    def test_sends_x_api_key_header_and_scoped_path(
+        self, cert_valid_anchored: dict[str, Any]
+    ) -> None:
+        request_id = "req_test_0000000000000001"
+        route = respx.get(f"{BASE}{CERT_PATH_PREFIX}{request_id}").respond(
+            200, json=cert_valid_anchored
+        )
+        client = _client()
+        client.get_certificate(request_id)
+        assert route.called
+        sent: httpx.Request = route.calls.last.request
+        assert sent.url.path == f"{CERT_PATH_PREFIX}{request_id}"
+        assert sent.headers.get("x-api-key") == VALID_KEY
+
+
+class TestPending202:
+    @respx.mock
+    def test_raises_http_error_with_status_202_and_wrapper_body(self) -> None:
+        pending_body = {
+            "status": "pending",
+            "request_id": "req_pending_0001",
+            "message": "Veil certificate is not ready yet.",
+            "retry_after_seconds": 30,
+        }
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_pending_0001").respond(
+            202, json=pending_body
+        )
+        client = _client()
+        with pytest.raises(TheVeilHttpError) as exc_info:
+            client.get_certificate("req_pending_0001")
+        err = exc_info.value
+        assert err.status == 202
+        assert err.body == pending_body
+        assert err.body["status"] == "pending"
+        assert err.body["retry_after_seconds"] == 30
+
+
+class TestHttpErrorMapping:
+    """Each gateway error envelope maps to TheVeilHttpError preserving status + body."""
+
+    @pytest.mark.parametrize(
+        ("status", "label"),
+        [
+            (401, "missing_api_key"),
+            (401, "invalid_api_key"),
+            (403, "tier_insufficient"),
+            (404, "veil_not_configured"),
+            (502, "upstream_error"),
+        ],
+    )
+    @respx.mock
+    def test_maps_status_and_code(self, status: int, label: str) -> None:
+        body: dict[str, Any] = {
+            "error": {"code": label, "message": f"test {label}"}
+        }
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_err_0001").respond(
+            status_code=status, json=body
+        )
+        client = _client()
+        with pytest.raises(TheVeilHttpError) as exc_info:
+            client.get_certificate("req_err_0001")
+        err = exc_info.value
+        assert isinstance(err, TheVeilError)
+        assert err.status == status
+        assert err.body == body
+        assert err.body["error"]["code"] == label
+
+    @respx.mock
+    def test_503_veil_unavailable_carries_retry_after_seconds_in_body(self) -> None:
+        body: dict[str, Any] = {
+            "error": {
+                "code": "veil_unavailable",
+                "message": "Veil Witness is temporarily unavailable.",
+                "retry_after_seconds": 30,
+            }
+        }
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_unavailable_0001").respond(
+            status_code=503, json=body
+        )
+        client = _client()
+        with pytest.raises(TheVeilHttpError) as exc_info:
+            client.get_certificate("req_unavailable_0001")
+        err = exc_info.value
+        assert err.status == 503
+        assert err.body["error"]["retry_after_seconds"] == 30
+
+
+class TestTransportErrors:
+    @respx.mock
+    def test_network_error_wraps_to_the_veil_error_not_http_error(self) -> None:
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_network_0001").mock(
+            side_effect=httpx.ConnectError("boom")
+        )
+        client = _client()
+        with pytest.raises(TheVeilError) as exc_info:
+            client.get_certificate("req_network_0001")
+        err = exc_info.value
+        assert not isinstance(err, TheVeilHttpError)
+
+
+class TestTimeout:
+    @respx.mock
+    def test_timeout_raises_the_veil_timeout_error(self) -> None:
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_slow_0001").mock(
+            side_effect=httpx.TimeoutException("simulated")
+        )
+        client = _client()
+        with pytest.raises(TheVeilTimeoutError, match=r"\d"):
+            client.get_certificate(
+                "req_slow_0001", options=MessagesOptions(timeout=0.05)
+            )
+
+    def test_rejects_invalid_per_call_timeout(self) -> None:
+        client = _client()
+        with pytest.raises(TheVeilConfigError, match="options.timeout"):
+            client.get_certificate(
+                "req_x", options=MessagesOptions(timeout=-1)
+            )
+
+
+class TestPathEncoding:
+    @respx.mock
+    def test_percent_encodes_reserved_chars(
+        self, cert_valid_anchored: dict[str, Any]
+    ) -> None:
+        # The encoded path must match what respx sees: slash → %2F,
+        # space → %20, question mark → %3F.
+        encoded_path = f"{CERT_PATH_PREFIX}req%2Fweird%20id%3F"
+        route = respx.get(f"{BASE}{encoded_path}").respond(
+            200, json=cert_valid_anchored
+        )
+        client = _client()
+        client.get_certificate("req/weird id?")
+        assert route.called
+        sent: httpx.Request = route.calls.last.request
+        assert sent.url.raw_path.decode() == encoded_path
+        assert "req/weird id?" not in str(sent.url)
+
+    def test_rejects_non_string_request_id(self) -> None:
+        client = _client()
+        with pytest.raises(TheVeilConfigError, match="request_id"):
+            client.get_certificate(12345)  # type: ignore[arg-type]
+
+
+class TestMalformed200:
+    """Observed behaviour: non-JSON / wrong-shape 200 surfaces as
+    TheVeilHttpError(status=200, body=<raw>). Intentional divergence from
+    TS thin-transport pass-through — see module docstring."""
+
+    @respx.mock
+    def test_non_json_200_body_raises_http_error(self) -> None:
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_malformed_0001").respond(
+            200, text="not json at all", headers={"content-type": "text/plain"}
+        )
+        client = _client()
+        with pytest.raises(TheVeilHttpError) as exc_info:
+            client.get_certificate("req_malformed_0001")
+        err = exc_info.value
+        assert err.status == 200
+        assert err.body == "not json at all"
+
+    @respx.mock
+    def test_missing_required_fields_200_raises_http_error(self) -> None:
+        # A 200 with JSON but missing `certificate_id` — Pydantic raises
+        # ValidationError; the client wraps as TheVeilHttpError.
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_partial_0001").respond(
+            200, json={"not_a_cert": True}
+        )
+        client = _client()
+        with pytest.raises(TheVeilHttpError) as exc_info:
+            client.get_certificate("req_partial_0001")
+        err = exc_info.value
+        assert err.status == 200
+        assert isinstance(err.body, dict)
+
+
+class TestPerCallHeaderMerge:
+    @respx.mock
+    def test_caller_headers_merged_sdk_owned_keys_win(
+        self, cert_valid_anchored: dict[str, Any]
+    ) -> None:
+        route = respx.get(f"{BASE}{CERT_PATH_PREFIX}req_h").respond(
+            200, json=cert_valid_anchored
+        )
+        client = _client()
+        client.get_certificate(
+            "req_h",
+            options=MessagesOptions(
+                headers={
+                    "x-correlation-id": "corr_abc",
+                    # Caller attempts to override x-api-key and content-type;
+                    # SDK-owned keys must win.
+                    "x-api-key": "dsa_" + "f" * 32,
+                    "content-type": "text/plain",
+                }
+            ),
+        )
+        assert route.called
+        sent: httpx.Request = route.calls.last.request
+        assert sent.headers.get("x-correlation-id") == "corr_abc"
+        assert sent.headers.get("x-api-key") == VALID_KEY
+        assert sent.headers.get("content-type") == "application/json"

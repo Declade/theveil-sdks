@@ -1,0 +1,55 @@
+from theveil.client import TheVeil
+from theveil.errors import (
+    TheVeilCertificateError,
+    TheVeilConfigError,
+    TheVeilError,
+    TheVeilHttpError,
+    TheVeilTimeoutError,
+)
+from theveil.types import (
+    MessagesOptions,
+    ProxyAcceptedResponse,
+    ProxyMessagesRequest,
+    ProxyPIIAnnotation,
+    ProxyRequest,
+    ProxyResponse,
+    ProxySyncResponse,
+    ProxyVeilReceipt,
+    TheVeilConfig,
+    VeilAnchorStatusInfo,
+    VeilCertificate,
+    VeilClaim,
+    VeilExternalAttestation,
+    VeilVerificationResult,
+    VerifyCertificateFailureReason,
+    VerifyCertificateKeys,
+    VerifyCertificateResult,
+)
+
+__all__ = [
+    "MessagesOptions",
+    "ProxyAcceptedResponse",
+    "ProxyMessagesRequest",
+    "ProxyPIIAnnotation",
+    "ProxyRequest",
+    "ProxyResponse",
+    "ProxySyncResponse",
+    "ProxyVeilReceipt",
+    "TheVeil",
+    "TheVeilCertificateError",
+    "TheVeilConfig",
+    "TheVeilConfigError",
+    "TheVeilError",
+    "TheVeilHttpError",
+    "TheVeilTimeoutError",
+    "VeilAnchorStatusInfo",
+    "VeilCertificate",
+    "VeilClaim",
+    "VeilExternalAttestation",
+    "VeilVerificationResult",
+    "VerifyCertificateFailureReason",
+    "VerifyCertificateKeys",
+    "VerifyCertificateResult",
+]
+
+__version__ = "0.1.0"
