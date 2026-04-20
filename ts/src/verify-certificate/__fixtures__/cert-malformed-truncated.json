@@ -119,7 +119,7 @@
     "transparency_log": null,
     "notary": {
       "provider": "dsa-veil-witness",
-      "notary_signature": "BDLnkSesVhmBjRDq+/nox22jJew77lIeTakG8Ni6CwDOu5A+N1neAC8WihMPcwpNNuGvA9MaazqKv0966t8oBA==",
+      "notary_signature": "MomXzkJsESRo8wGwTI/csuhPHCHmTduSaSFgA5LSbZoeHGlLNdeJHm/WHyQTSUX5iSJA1WPT5yelj5lxMX12Dg==",
       "notary_public_key_id": "witness_v1",
       "checks_performed": [
         "canonical_json_signing"

@@ -49,6 +49,17 @@ export interface TheVeilCertificateErrorOptions extends ErrorOptions {
 
 export class TheVeilCertificateError extends TheVeilError {
   public readonly reason: VerifyCertificateFailureReason;
+
+  /**
+   * Certificate ID lifted from `cert.certificate_id` for error-context
+   * logging. SECURITY NOTE: on all failure paths, this value is UNVERIFIED —
+   * the witness signature has not yet been (or failed to) verify by the
+   * time this ID is attached. An attacker or malformed cert can set any
+   * string here. Consumers logging this field should treat it as untrusted
+   * input (escape / truncate / bound length). Only on the success return
+   * path (VerifyCertificateResult.certificateId) is this value covered by
+   * the witness signature.
+   */
   public readonly certificateId?: string;
 
   constructor(message: string, options: TheVeilCertificateErrorOptions) {

@@ -17,14 +17,14 @@
 //     numbers throw at the boundary
 // Output: zero whitespace, no trailing newline, UTF-8 bytes.
 //
-// Known asymmetry (N-new-5, guarded by the canonical-json-go-reference.hex
-// fixture): Go's marshalSorted does NOT recurse into arrays — arrays
-// delegate to json.Marshal, which does not sort keys in array-element
-// maps. This TS port DOES recurse into arrays. v1's 7-field signable surface
-// has no arrays-of-maps, so the divergence is invisible in the happy path,
-// but the golden-hex fixture includes an _array_of_maps_probe that catches
-// the divergence at fixture regen time. If that test ever fails, the TS
-// behavior must be fixed to match Go (not the other way around).
+// Array-of-maps behaviour (N-new-5 probe in canonical-json-go-reference.hex):
+// Go's marshalSorted does NOT recurse into arrays — arrays delegate to
+// json.Marshal. json.Marshal's default behaviour on map[string]any IS to
+// sort keys alphabetically (documented since Go 1.12), so Go and TS both
+// produce identical bytes for arrays-of-maps even though the TS port
+// reaches sorted-keys through explicit recursion. The probe in the
+// golden-hex fixture locks this agreement in: if Go's behaviour ever
+// changes (or the TS recursion is removed), the test fires.
 
 const RAW_INT_BRAND = Symbol('RawIntegerNumber');
 

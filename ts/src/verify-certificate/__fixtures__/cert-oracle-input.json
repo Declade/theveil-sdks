@@ -1,0 +1,9 @@
+{
+  "certificate_id": "veil_oracle_0000000000000001",
+  "request_id": "req_oracle_0000000000000001",
+  "protocol_version": 2,
+  "claim_ids": ["clm_oracle_0001", "clm_oracle_0002", "clm_oracle_0003", "clm_oracle_0004"],
+  "issued_at": "2026-04-20T05:24:12.710321721Z",
+  "overall_verdict": "VERIFIED",
+  "witness_key_id": "witness_v1"
+}

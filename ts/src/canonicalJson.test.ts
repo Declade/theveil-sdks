@@ -57,19 +57,25 @@ describe('canonicalJson — port of pkg/veil/canonical.go', () => {
     expect(new TextDecoder().decode(bytes)).toBe('{"k":"\\"\\\\"}');
   });
 
-  it('reproduces the Veil signed-subset shape byte-for-byte', () => {
+  it('canonicalizes a sample Veil-shaped map byte-for-byte as expected', () => {
+    // This test exercises canonicalJson on a realistic shape — strings,
+    // string arrays, rawIntegerNumber leaves, nano-precision timestamp —
+    // but does NOT assert anything about what the signable actually
+    // emits (that's covered by the Go cert-oracle fixture). The field
+    // names are deliberately not the signable's field names to keep
+    // concerns separated.
     const input = {
       certificate_id: 'veil_abc',
       request_id: 'req_123',
       protocol_version: rawIntegerNumber(2),
       claim_ids: ['clm_1', 'clm_2'],
       issued_at: '2026-04-20T05:24:12.710321721Z',
-      overall_verdict: rawIntegerNumber(1),
+      _integer_probe: rawIntegerNumber(1),
       witness_key_id: 'witness_v1',
     };
     const bytes = canonicalJson(input);
     expect(new TextDecoder().decode(bytes)).toBe(
-      '{"certificate_id":"veil_abc","claim_ids":["clm_1","clm_2"],"issued_at":"2026-04-20T05:24:12.710321721Z","overall_verdict":1,"protocol_version":2,"request_id":"req_123","witness_key_id":"witness_v1"}',
+      '{"_integer_probe":1,"certificate_id":"veil_abc","claim_ids":["clm_1","clm_2"],"issued_at":"2026-04-20T05:24:12.710321721Z","protocol_version":2,"request_id":"req_123","witness_key_id":"witness_v1"}',
     );
   });
 

@@ -322,6 +322,99 @@ describe('verifyCertificate — ordering + error shape', () => {
   });
 });
 
+describe('verifyCertificate — Go-oracle cross-check (end-to-end)', () => {
+  // This is the authoritative "does the TS port agree with Go end-to-end"
+  // test. The fixture is produced by gen-cert-oracle.go (committed under
+  // __fixtures__/), which runs the actual Go pkg/veil.CanonicalJSON on
+  // the 7-field signable map and signs with the committed stable test
+  // keypair (test-witness-keypair.json). Any drift between the Go
+  // assembler's signing path and the TS deriveWitnessSignedBytes path
+  // fails this test immediately — which is how we caught the earlier
+  // integer-vs-string encoding bug for overall_verdict.
+  //
+  // If this test ever fails after a gateway change, re-run
+  //   cd /path/to/dual-sandbox-architecture
+  //   go run /path/to/theveil-sdks/ts/src/verify-certificate/__fixtures__/gen-cert-oracle.go
+  // and investigate: the Go side changed its signable-field encoding and
+  // the TS port must match. Do NOT paper over by regenerating both.
+  it('TS verifyCertificate accepts a Go-oracle-signed cert', async () => {
+    const goCert = loadFixture('cert-go-signed-reference.json');
+    const oracleKp = JSON.parse(
+      readFileSync(join(fixturesDir, 'test-witness-keypair.json'), 'utf8'),
+    ) as { publicKey: string };
+    const result = await verifyCertificate(goCert, {
+      witnessKeyId: 'witness_v1',
+      witnessPublicKey: oracleKp.publicKey,
+    });
+    expect(result.certificateId).toBe('veil_oracle_0000000000000001');
+    expect(result.requestId).toBe('req_oracle_0000000000000001');
+    expect(result.witnessKeyId).toBe('witness_v1');
+    expect(result.overallVerdict).toBe('VERDICT_VERIFIED');
+    expect(result.anchorStatus).toBe('ANCHOR_STATUS_ANCHORED');
+  });
+});
+
+describe('verifyCertificate — bug-hunter C4/C5 gap fills', () => {
+  it('throws malformed on cert with empty claims array (C4 — empty-claims path)', async () => {
+    const cert = loadFixture('cert-valid-anchored.json');
+    cert.claims = [];
+    await expect(verifyCertificate(cert, keysAll())).rejects.toMatchObject({
+      reason: 'malformed',
+    });
+  });
+
+  it('throws malformed on cert with empty-string overall_verdict (C5)', async () => {
+    const cert = loadFixture('cert-valid-anchored.json');
+    (cert.verification as { overall_verdict: string }).overall_verdict = '';
+    await expect(verifyCertificate(cert, keysAll())).rejects.toMatchObject({
+      reason: 'malformed',
+    });
+  });
+
+  it('throws malformed on cert with claim element whose claim_id is not a string', async () => {
+    const cert = loadFixture('cert-valid-anchored.json');
+    // Matches bug-hunter C1's cascade path — without the bounded claim_id
+    // check in signable, this would surface as a raw canonical-json TypeError.
+    (cert.claims[0] as { claim_id: unknown }).claim_id = 42;
+    await expect(verifyCertificate(cert, keysAll())).rejects.toMatchObject({
+      reason: 'malformed',
+    });
+  });
+
+  it('throws malformed on cert with null claim element (C1 cascade)', async () => {
+    const cert = loadFixture('cert-valid-anchored.json');
+    // Push a null after the first valid claim. C2 (request_id match on
+    // claims[0]) still passes; the C1 per-element validation in signable
+    // must catch claims[1] = null before canonicalJson gets hold of it.
+    (cert.claims as unknown as Array<unknown>).push(null);
+    await expect(verifyCertificate(cert, keysAll())).rejects.toMatchObject({
+      reason: 'malformed',
+    });
+  });
+
+  it('throws TypeError (not TheVeilCertificateError) on null keys argument', async () => {
+    await expect(
+      verifyCertificate(
+        loadFixture('cert-valid-anchored.json'),
+        null as unknown as VerifyCertificateKeys,
+      ),
+    ).rejects.toThrow(TypeError);
+  });
+
+  it('resists Object.prototype pollution via overall_verdict="__proto__"', async () => {
+    // Without Object.hasOwn (or a null-prototype lookup table),
+    // VERDICT_FULL_TO_SHORT['__proto__'] would resolve to Object.prototype,
+    // bypass the membership check, and leak a raw TypeError from a
+    // downstream string validation. With the fix, this is caught as
+    // `malformed` like any other unknown enum literal.
+    const cert = loadFixture('cert-valid-anchored.json');
+    (cert.verification as { overall_verdict: string }).overall_verdict = '__proto__';
+    await expect(verifyCertificate(cert, keysAll())).rejects.toMatchObject({
+      reason: 'malformed',
+    });
+  });
+});
+
 describe('TheVeil#verifyCertificate client delegation', () => {
   // Client-level smoke test — ensures the public method on TheVeil
   // delegates to the standalone verify function without drift.

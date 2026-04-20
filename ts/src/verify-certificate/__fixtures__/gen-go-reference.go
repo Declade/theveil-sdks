@@ -1,11 +1,13 @@
 //go:build ignore
 // Regenerate canonical-json-go-reference.hex.
 //
-// Usage:
+// Usage: this file imports github.com/Declade/dual-sandbox-architecture/pkg/veil,
+// so it must be run from within the dual-sandbox-architecture module (its
+// go.mod is the only one that resolves that import path).
 //
-//	cd /path/to/theveil-sdks
-//	go run ts/src/verify-certificate/__fixtures__/gen-go-reference.go \
-//	  > ts/src/verify-certificate/__fixtures__/canonical-json-go-reference.hex
+//	cd /path/to/dual-sandbox-architecture
+//	go run /path/to/theveil-sdks/ts/src/verify-certificate/__fixtures__/gen-go-reference.go \
+//	  > /path/to/theveil-sdks/ts/src/verify-certificate/__fixtures__/canonical-json-go-reference.hex
 //
 // MANDATORY determinism check before committing: run this twice on the same
 // input and byte-compare. If outputs differ, Go's marshal path is non-

@@ -56,6 +56,16 @@ export async function verifyCertificate(
   rawCert: unknown,
   keys: VerifyCertificateKeys,
 ): Promise<VerifyCertificateResult> {
+  // Guard: null/undefined/non-object keys argument. TS strict mode catches
+  // this at compile time, but untyped JS callers, JSON-RPC bridges, and
+  // cross-language embedders would otherwise see a raw "Cannot read
+  // properties of null" TypeError. Surface it as TypeError (programmer
+  // error), not as TheVeilCertificateError — wrong input to the SDK is
+  // not a cert-verification failure.
+  if (keys === null || typeof keys !== 'object') {
+    throw new TypeError('verifyCertificate: keys argument is required');
+  }
+
   // Step 1: structural parse → malformed on bad shape / missing required
   // fields / non-string overall_verdict.
   const cert = parseCertificate(rawCert);
@@ -89,13 +99,34 @@ export async function verifyCertificate(
     });
   }
 
-  // Step 5: derive canonical signed bytes + Ed25519 verify. deriveWitness
-  // SignedBytes may itself throw `malformed` (C2/C3 guards for the gateway
-  // invariant + unknown verdict literal). Key-normalization TypeErrors
-  // (wrong length, null input, etc.) are wrapped as TheVeilCertificateError
-  // with reason 'invalid_signature' so callers always get a typed error
-  // while the original TypeError is preserved on .cause.
-  const signedBytes = deriveWitnessSignedBytes(cert);
+  // Step 5: derive canonical signed bytes + Ed25519 verify.
+  //
+  // deriveWitnessSignedBytes may itself throw `malformed` (C2/C3 guards
+  // for the gateway invariant + unknown verdict literal + non-string
+  // claim_id elements). It may also throw TypeError from the canonical
+  // JSON encoder for structurally-valid-but-semantically-invalid inputs
+  // (e.g., naked JS numbers from a JS-only caller bypassing TS types,
+  // circular references, unsupported value types). Wrap those as
+  // `malformed` so callers always get a typed error and the 5-reason
+  // contract holds even under adversarial JS-only inputs.
+  //
+  // Key-normalization TypeErrors from verifyEd25519 (wrong key length,
+  // null key input, etc.) are wrapped as `invalid_signature` so a
+  // caller who passed a malformed key still gets a typed error with
+  // the original TypeError preserved on .cause.
+  let signedBytes: Uint8Array;
+  try {
+    signedBytes = deriveWitnessSignedBytes(cert);
+  } catch (err) {
+    if (err instanceof TheVeilCertificateError) throw err;
+    if (err instanceof TypeError) {
+      throw new TheVeilCertificateError(
+        `Failed to derive signed payload: ${err.message}`,
+        { reason: 'malformed', certificateId: cert.certificate_id, cause: err },
+      );
+    }
+    throw err;
+  }
   const signatureBytes = new Uint8Array(Buffer.from(cert.witness_signature, 'base64'));
   let valid: boolean;
   try {
