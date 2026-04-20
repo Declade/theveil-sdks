@@ -112,6 +112,24 @@ def test_rejects_unsupported_types() -> None:
         canonical_json({"a": object()})
 
 
+def test_rejects_lone_surrogate() -> None:
+    # A malformed Unicode string carrying an unpaired surrogate would
+    # survive json.dumps(ensure_ascii=False) but crash on .encode("utf-8").
+    # canonical_json must convert that into a typed TypeError so the
+    # verify_certificate pipeline can wrap it as reason="malformed"
+    # instead of letting a raw UnicodeEncodeError escape.
+    with pytest.raises(TypeError, match="surrogate"):
+        canonical_json({"a": "\ud800"})
+
+
+def test_rejects_mismatched_surrogate_pair() -> None:
+    # Two lone surrogates Python-str-concatenated do NOT compose into a
+    # supplementary-plane codepoint at the Python str level; they remain
+    # two individual surrogate codepoints and fail UTF-8 encoding.
+    with pytest.raises(TypeError, match="surrogate"):
+        canonical_json({"a": "\ud83d\ude00"})
+
+
 def test_matches_go_reference_hex_byte_for_byte(
     canonical_reference: tuple[dict[str, Any], str],
 ) -> None:

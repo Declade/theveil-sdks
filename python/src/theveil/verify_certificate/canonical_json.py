@@ -36,15 +36,26 @@ def canonical_json(value: Any) -> bytes:
     """Serialize ``value`` to canonical JSON bytes.
 
     Raises:
-        TypeError: on floats, circular references, or unsupported value
-            types. These are deliberate boundary rejections — the Veil
+        TypeError: on floats, circular references, unsupported value
+            types, or invalid Unicode (lone surrogates, invalid UTF-16
+            pairs). These are deliberate boundary rejections — the Veil
             signable subset contains only strings, bools, ints, None,
-            lists, and dicts.
+            lists, and dicts, all representable in well-formed UTF-8.
     """
 
     seen: set[int] = set()
     s = _marshal_sorted(value, seen)
-    return s.encode("utf-8")
+    try:
+        return s.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        # Lone / mismatched surrogates survive json.dumps(ensure_ascii=False)
+        # as Python str codepoints but fail to encode to UTF-8. Convert to
+        # TypeError so the verify_certificate pipeline wraps it as
+        # TheVeilCertificateError(reason="malformed") rather than leaking
+        # a raw UnicodeEncodeError.
+        raise TypeError(
+            f"canonical_json: input contains invalid UTF-16 surrogate bytes: {exc}"
+        ) from exc
 
 
 def _stringify_leaf(s: str) -> str:
