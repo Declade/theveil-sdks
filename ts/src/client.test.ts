@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TheVeil } from './client.js';
 import {
@@ -18,8 +19,10 @@ const asInternal = (client: TheVeil): Internal => client as unknown as Internal;
 
 describe('TheVeil constructor — apiKey validation', () => {
   it('accepts a well-formed dsa_ key', () => {
-    const client = new TheVeil({ apiKey: VALID_KEY });
-    expect(client.apiKey).toBe(VALID_KEY);
+    // The key is stored on a private field (#apiKey), so we cannot — and
+    // intentionally must not — assert on a read-back here. Successful
+    // construction (no throw) is the whole observable contract.
+    expect(() => new TheVeil({ apiKey: VALID_KEY })).not.toThrow();
   });
 
   it('rejects a key with the wrong prefix', () => {
@@ -205,5 +208,44 @@ describe('TheVeil.request() — error wrapping', () => {
       // which would have moved the original onto `.cause`.
       expect(httpErr.cause).toBeUndefined();
     }
+  });
+});
+
+describe('TheVeil — apiKey hiding', () => {
+  // The key is held on a JS private class field (#apiKey). These three tests
+  // pin the three observable consequences of that choice; a future regression
+  // (e.g. someone re-adding a `public readonly apiKey` shim or a `toJSON`
+  // getter) will fail at least one of them.
+  it('does not include the apiKey in JSON.stringify output', () => {
+    const client = new TheVeil({ apiKey: VALID_KEY });
+    const serialized = JSON.stringify(client);
+    expect(serialized).not.toContain(VALID_KEY);
+  });
+
+  it('does not include the apiKey in util.inspect output', () => {
+    const client = new TheVeil({ apiKey: VALID_KEY });
+    // showHidden surfaces non-enumerable own props; private class fields are
+    // still excluded by spec, so this is the strictest practical check.
+    const inspected = inspect(client, { showHidden: true, depth: null });
+    expect(inspected).not.toContain(VALID_KEY);
+  });
+
+  it('does not expose apiKey as an instance property at the type level', () => {
+    const client = new TheVeil({ apiKey: VALID_KEY });
+    // Structural checks come first: a regression that re-adds
+    // `public readonly apiKey` would fail these BEFORE any read of the
+    // property, so the actual key value never reaches the test output as
+    // part of the failure message.
+    expect('apiKey' in client).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(client, 'apiKey')).toBe(false);
+    // @ts-expect-error apiKey is a private class field (#apiKey); reading it
+    // off the public instance type must be a TS error. If this directive ever
+    // stops firing, tsc will flag it as an unused @ts-expect-error — that is
+    // the compile-time regression signal.
+    const leaked = client.apiKey;
+    // Runtime tripwire: only reached when the structural checks above pass,
+    // so this assertion confirms there is no compatibility getter quietly
+    // returning the key when TS isn't looking.
+    expect(leaked).toBeUndefined();
   });
 });
