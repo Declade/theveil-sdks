@@ -4,8 +4,9 @@
 
 Pre-1.0. The `TheVeil` client ships construction-time `apiKey` validation,
 `baseUrl` normalization with scheme guards, per-call timeout composition,
-the `client.messages()` proxy endpoint, and four typed error classes. The
-public API surface is still in flux — see [CHANGELOG](../CHANGELOG.md).
+the `client.messages()` proxy endpoint, `client.verifyCertificate()` for
+witness-signature verification, and five typed error classes. The public
+API surface is still in flux — see [CHANGELOG](../CHANGELOG.md).
 
 ## Install
 
@@ -14,6 +15,52 @@ npm install @dsaveil/theveil
 ```
 
 (not yet published)
+
+## Verify a Veil Certificate
+
+`client.verifyCertificate(cert, keys)` verifies the Veil witness's Ed25519
+signature over a certificate's canonical JSON core fields. The caller
+supplies the witness identity (expected `witnessKeyId` label and raw 32-byte
+`witnessPublicKey`) out of band — the SDK never fetches or bakes in keys.
+
+External RFC 3161 timestamp verification and Sigstore Rekor transparency-
+log verification are **not** performed by this release. They land in a
+follow-up release pending gateway work. Until then, `anchorStatus` and
+`overallVerdict` are surfaced as pass-through metadata for observability,
+not independently verified.
+
+```ts
+import { TheVeil, TheVeilCertificateError } from '@dsaveil/theveil';
+
+const client = new TheVeil({ apiKey: process.env.THEVEIL_API_KEY! });
+
+// Obtain the certificate out of band (fetch helper lands in a later arc).
+const cert = await fetchVeilCertificate(requestId);
+
+try {
+  const result = await client.verifyCertificate(cert, {
+    witnessKeyId: 'witness_v1',
+    witnessPublicKey: process.env.VEIL_WITNESS_PUBLIC_KEY_BASE64!,
+  });
+  // result.witnessAssertedIssuedAtIso preserves full nanosecond precision;
+  // result.witnessAssertedIssuedAt is the millisecond-truncated Date form.
+  console.log('verified', result.certificateId, result.witnessAssertedIssuedAtIso);
+} catch (err) {
+  if (err instanceof TheVeilCertificateError) {
+    switch (err.reason) {
+      case 'malformed':
+      case 'unsupported_protocol_version':
+      case 'witness_mismatch':
+      case 'witness_signature_missing':
+      case 'invalid_signature':
+        console.error(`verify failed (${err.reason}):`, err.message);
+        break;
+    }
+    return;
+  }
+  throw err;
+}
+```
 
 ## Back to root
 

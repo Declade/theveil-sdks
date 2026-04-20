@@ -1,0 +1,5 @@
+{
+  "_note": "TEST KEY — DO NOT USE. Committed for deterministic fixture regeneration. Ed25519 keypair; publicKey + privateKey are base64-encoded raw bytes.",
+  "privateKey": "I/+cQokwItWxBcmXKYC1vJNgGOmm1+VVFNxBJ9vvU/jeOPBfhwllg5b93wQu7W8QqFcYh6r7OxngvKY57KbyEQ==",
+  "publicKey": "3jjwX4cJZYOW/d8ELu1vEKhXGIeq+zsZ4LymOeym8hE="
+}

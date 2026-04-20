@@ -109,3 +109,183 @@ export interface ProxyAcceptedResponse {
 // Discriminated on `status`: the literal 'processing' is the async branch;
 // a ProxyJobStatus is the sync branch. Narrow with a check on response.status.
 export type ProxyResponse = ProxySyncResponse | ProxyAcceptedResponse;
+
+// ---------------------------------------------------------------------------
+// VeilCertificate — minimal type mirroring proto/veil/v1/veil.proto as served
+// via protojson at GET /api/v1/veil/certificate/{request_id}. Only the fields
+// this arc reads are modeled. Full fetch helper + complete type lands in
+// session 2b-cert-fetch.
+//
+// TODO(proxy-sync): keep in lockstep with
+//   dual-sandbox-architecture/proto/veil/v1/veil.proto (VeilCertificate).
+//
+// Gateway marshaller:
+//   services/gateway/internal/api/veil.go uses
+//   protojson.MarshalOptions{ EmitUnpopulated: true, UseProtoNames: true }.
+//   UseProtoNames affects field names only; enum values emit in full-name
+//   form (e.g. "ANCHOR_STATUS_ANCHORED", not "ANCHORED"). All enum unions
+//   below use full-name form to match.
+// ---------------------------------------------------------------------------
+
+export type VeilCertAnchorStatus =
+  | 'ANCHOR_STATUS_UNSPECIFIED'
+  | 'ANCHOR_STATUS_PENDING'
+  | 'ANCHOR_STATUS_ANCHORED'
+  | 'ANCHOR_STATUS_FAILED';
+
+export type VeilVerdict =
+  | 'VERDICT_UNSPECIFIED'
+  | 'VERDICT_VERIFIED'
+  | 'VERDICT_PARTIAL'
+  | 'VERDICT_FAILED';
+
+export type VeilCompleteness =
+  | 'COMPLETENESS_UNSPECIFIED'
+  | 'COMPLETENESS_FULL'
+  | 'COMPLETENESS_PARTIAL';
+
+export type VeilClaimType =
+  | 'CLAIM_TYPE_UNSPECIFIED'
+  | 'CLAIM_TYPE_TOKEN_GENERATED'
+  | 'CLAIM_TYPE_PII_SANITIZED'
+  | 'CLAIM_TYPE_INFERENCE_COMPLETED'
+  | 'CLAIM_TYPE_EVENTS_RECORDED';
+
+export type VeilIsolationProbeStatus =
+  | 'ISOLATION_PROBE_UNKNOWN'
+  | 'ISOLATION_PROBE_VERIFIED'
+  | 'ISOLATION_PROBE_BREACHED'
+  | 'ISOLATION_PROBE_LOCKED';
+
+// Claim shape — carried so verifyCertificate can extract claim_ids in order.
+// Other fields are unused by v1 verify but declared for future arcs.
+export interface VeilClaim {
+  claim_id: string;
+  request_id: string;
+  service_id: string;
+  claim_type: VeilClaimType;
+  data_seen: string[];
+  data_not_seen: string[];
+  canonical_payload: string; // base64 of per-service canonical JSON
+  timestamp: string;         // RFC 3339 (nanosecond precision)
+  signature: string;         // base64 Ed25519 of canonical_payload
+  // proto oneof payload variants — surfaced opaquely, not typed for v1.
+  bridge?: Record<string, unknown>;
+  sanitizer?: Record<string, unknown>;
+  inference?: Record<string, unknown>;
+  audit?: Record<string, unknown>;
+}
+
+export interface VeilVerificationResult {
+  signatures_valid: boolean;
+  completeness: VeilCompleteness;
+  missing_services: string[];
+  temporal_consistent: boolean;
+  data_visibility_consistent: boolean;
+  isolation_verified: boolean;
+  qi_score: unknown;
+  overall_verdict: VeilVerdict;
+}
+
+export interface VeilAnchorStatusInfo {
+  status: VeilCertAnchorStatus;
+  attempts?: number;
+  last_error?: string;
+  human_note?: string;
+}
+
+// Opaque attestation — v1 does not verify these fields. Notary sub-object is
+// surfaced for informational parity with server output. External TSA + Rekor
+// verification land in 2b-cert-strong once gateway issues
+// Declade/dual-sandbox-architecture#43/#44 close.
+export interface VeilExternalAttestation {
+  timestamp?: Record<string, unknown> | null;
+  transparency_log?: Record<string, unknown> | null;
+  notary?: {
+    provider: string;
+    notary_signature: string;
+    notary_public_key_id: string;
+    checks_performed: string[];
+    attested_at?: string | null;
+  } | null;
+}
+
+export interface VeilCertificate {
+  certificate_id: string;
+  request_id: string;
+  protocol_version: number;
+
+  // Signed-subset fields
+  claims: VeilClaim[];
+  verification: VeilVerificationResult;
+  issued_at: string; // RFC 3339
+
+  // Not in signed subset — passed through / unused by v1
+  formal_verification?: Record<string, unknown> | null;
+  audit_integrity?: Record<string, unknown> | null;
+  privacy_budget?: Record<string, unknown> | null;
+
+  // Witness signature + identity
+  witness_signature: string; // base64 Ed25519 (64 bytes)
+  witness_key_id: string;
+
+  // Opaque to v1; surfaced on the result with JSDoc caveats
+  attestation?: VeilExternalAttestation | null;
+  anchor_status?: VeilAnchorStatusInfo | null;
+}
+
+export interface VerifyCertificateKeys {
+  witnessKeyId: string;
+  witnessPublicKey: Uint8Array | string; // raw 32B OR base64
+}
+
+export interface VerifyCertificateResult {
+  certificateId: string;
+  requestId: string;
+  witnessKeyId: string;
+
+  /**
+   * Witness-asserted issuance time as a JS Date, truncated to millisecond
+   * precision. Taken from cert.issued_at (covered by the witness signature)
+   * but JS Date drops sub-millisecond digits.
+   *
+   * NOT independently timestamped by an external TSA — external RFC 3161
+   * verification lands in a follow-up arc (2b-cert-strong, tracked against
+   * Declade/dual-sandbox-architecture#43). Callers requiring trusted
+   * timestamps for freshness gating should not rely on this field.
+   *
+   * Use {@link VerifyCertificateResult.witnessAssertedIssuedAtIso} when
+   * precision beyond milliseconds matters (audit-record reconciliation,
+   * cross-service event ordering).
+   */
+  witnessAssertedIssuedAt: Date;
+
+  /**
+   * RFC 3339 timestamp string exactly as signed by the witness, preserving
+   * full precision (nanoseconds when present). Use this field instead of
+   * {@link VerifyCertificateResult.witnessAssertedIssuedAt} when precision
+   * beyond milliseconds matters.
+   *
+   * Same chain-of-custody caveats as `witnessAssertedIssuedAt`: witness-
+   * asserted, not externally timestamped.
+   */
+  witnessAssertedIssuedAtIso: string;
+
+  /**
+   * Gateway-reported anchor status, passed through verbatim. The SDK does
+   * NOT currently verify anchor status independently; follow-up arc
+   * 2b-cert-strong adds external verification. Upstream gateway reliability
+   * bug tracked at Declade/dual-sandbox-architecture#42 — do not treat this
+   * value as authoritative until that issue is closed.
+   */
+  anchorStatus: VeilCertAnchorStatus;
+
+  /**
+   * Witness-asserted overall verdict. Covered by the witness signature, but
+   * the SDK does not independently re-run any of the five underlying checks
+   * (signatures_valid, completeness, temporal_consistent,
+   * data_visibility_consistent, isolation_verified). Surface-only; treat as
+   * metadata.
+   */
+  overallVerdict: VeilVerdict;
+}
