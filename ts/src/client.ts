@@ -137,7 +137,7 @@ export class TheVeil {
     // would otherwise silently coerce NaN/Infinity to null on the wire.
     validateProxyMessagesRequest(params);
 
-    return this.request<ProxyResponse>(
+    const { body } = await this.request<ProxyResponse>(
       '/api/v1/proxy/messages',
       {
         method: 'POST',
@@ -149,6 +149,7 @@ export class TheVeil {
         signal: options?.signal,
       },
     );
+    return body;
   }
 
   // Verify a Veil Certificate's witness Ed25519 signature against the
@@ -164,11 +165,57 @@ export class TheVeil {
     return verifyCertificateImpl(cert, keys);
   }
 
+  // Fetch a Veil Certificate by request_id from the gateway's
+  // GET /api/v1/veil/certificate/{request_id} endpoint. The happy-path
+  // return is narrowly Promise<VeilCertificate>; the gateway's 202
+  // pending-wrapper response (cert not yet assembled, or unknown
+  // request_id — the gateway does not distinguish those two cases)
+  // surfaces as TheVeilHttpError{ status: 202, body: {status:"pending",
+  // retry_after_seconds, ...} } so callers get a narrow happy-path type
+  // and an explicit retry signal on the error branch. The `.status` on
+  // the thrown error is the real HTTP status reported by the gateway.
+  //
+  // No auto-verification: the returned cert is raw. Chain
+  // verifyCertificate() explicitly if you want witness-signature proof.
+  async getCertificate(
+    requestId: string,
+    options?: MessagesOptions,
+  ): Promise<VeilCertificate> {
+    // encodeURIComponent is defense-in-depth against path injection. The
+    // gateway's path extractor tolerates unencoded slashes, but the SDK
+    // should never emit a raw `..` or unescaped segment separator.
+    const encoded = encodeURIComponent(requestId);
+    const { status, body } = await this.request<unknown>(
+      `/api/v1/veil/certificate/${encoded}`,
+      { method: 'GET', headers: options?.headers },
+      { timeoutMs: options?.timeoutMs, signal: options?.signal },
+    );
+
+    // 202 means the gateway reached the witness but the certificate is
+    // not yet assembled (or the request_id is unknown — the gateway does
+    // not distinguish the two). Surface as TheVeilHttpError so the
+    // happy-path return stays a narrow VeilCertificate. Inspect
+    // err.body.retry_after_seconds on the caller side.
+    if (status === 202) {
+      throw new TheVeilHttpError(
+        'Veil certificate is not yet assembled; retry after the indicated delay.',
+        status,
+        body,
+      );
+    }
+
+    // Thin-transport rule: do NOT validate the body shape on the 2xx
+    // happy path. A non-JSON or wrong-shaped 200 passes through typed
+    // as VeilCertificate; downstream verifyCertificate() will reject
+    // it with TheVeilCertificateError{ reason:"malformed" }.
+    return body as VeilCertificate;
+  }
+
   private async request<T>(
     path: string,
     init: RequestInit,
     opts?: { timeoutMs?: number; signal?: AbortSignal },
-  ): Promise<T> {
+  ): Promise<{ status: number; body: T }> {
     const url = `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
     const callerSignal = opts?.signal;
     // Per-call timeoutMs is validated with the same strictness as the
@@ -233,7 +280,7 @@ export class TheVeil {
           body,
         );
       }
-      return body as T;
+      return { status: response.status, body: body as T };
     } catch (err) {
       if (err instanceof TheVeilError) {
         throw err;
