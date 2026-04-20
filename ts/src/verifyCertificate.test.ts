@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { generateKeyPairSync, sign, type JsonWebKey } from 'node:crypto';
 import { normalizeEd25519PublicKey } from './verify-certificate/keys.js';
 import { verifyEd25519 } from './verify-certificate/signature.js';
+import type { VeilCertificate } from './types.js';
+
+const fixturesDir = join(__dirname, 'verify-certificate', '__fixtures__');
+
+function loadFixture<T = VeilCertificate>(name: string): T {
+  return JSON.parse(readFileSync(join(fixturesDir, name), 'utf8')) as T;
+}
 
 // Extract the raw 32-byte Ed25519 public key from a node:crypto KeyObject.
 // Node's Ed25519 public-key JWK format carries `x` as base64url of the raw
@@ -83,5 +92,49 @@ describe('verifyEd25519', () => {
     const message = new TextEncoder().encode('hello');
     const sig = new Uint8Array(64);
     expect(() => verifyEd25519(message, sig, new Uint8Array(16))).toThrow(TypeError);
+  });
+});
+
+describe('cert fixtures loadable', () => {
+  it('cert-valid-anchored.json matches expected shape', () => {
+    const cert = loadFixture('cert-valid-anchored.json');
+    expect(cert.protocol_version).toBe(2);
+    expect(cert.anchor_status?.status).toBe('ANCHOR_STATUS_ANCHORED');
+    expect(cert.verification.overall_verdict).toBe('VERDICT_VERIFIED');
+    expect(cert.witness_signature).toBeTruthy();
+    expect(cert.witness_key_id).toBe('witness_v1');
+  });
+
+  // B2 — lock in the protojson-UTC assumption. If the gateway ever ships
+  // a `+00:00` suffix instead of `Z`, this fails loudly so signable
+  // reconstruction doesn't silently produce `invalid_signature` on valid
+  // certs.
+  it('cert.issued_at terminates in Z (protojson UTC form)', () => {
+    expect(loadFixture('cert-valid-anchored.json').issued_at).toMatch(/Z$/);
+  });
+
+  it('pending + failed + tampered variants parse as JSON', () => {
+    expect(loadFixture('cert-valid-pending.json').anchor_status?.status).toBe(
+      'ANCHOR_STATUS_PENDING',
+    );
+    expect(loadFixture('cert-valid-failed.json').anchor_status?.status).toBe(
+      'ANCHOR_STATUS_FAILED',
+    );
+    expect(loadFixture('cert-tampered-payload.json').claims[0]?.claim_id).toMatch(
+      /TAMPERED$/,
+    );
+  });
+
+  it('no-signature + whitespace-signature variants have empty/whitespace witness_signature', () => {
+    expect(loadFixture('cert-no-signature.json').witness_signature).toBe('');
+    expect(loadFixture('cert-whitespace-signature.json').witness_signature).toMatch(
+      /^\s+$/,
+    );
+  });
+
+  it('protocol-version-mismatch variant carries non-2 protocol_version', () => {
+    expect(loadFixture('cert-protocol-version-mismatch.json').protocol_version).toBe(
+      999,
+    );
   });
 });
