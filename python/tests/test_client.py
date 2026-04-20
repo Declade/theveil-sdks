@@ -127,6 +127,74 @@ class TestTimeout:
             TheVeil(TheVeilConfig(api_key=VALID_KEY, timeout="10"))  # type: ignore[arg-type]
 
 
+class TestHTTPBaseURLGuard:
+    """http:// is rejected for non-loopback hosts — API-key exfiltration guard."""
+
+    @pytest.mark.parametrize(
+        "host",
+        ["localhost", "127.0.0.1", "::1", "myservice.local"],
+    )
+    def test_accepts_http_for_loopback_and_mdns(self, host: str) -> None:
+        # Handle IPv6 bracket-wrapping for ::1
+        if host == "::1":
+            url = f"http://[{host}]:8080"
+        else:
+            url = f"http://{host}:8080"
+        client = TheVeil(TheVeilConfig(api_key=VALID_KEY, base_url=url))
+        assert client.base_url == url.rstrip("/")
+
+    def test_rejects_http_on_public_host(self) -> None:
+        with pytest.raises(TheVeilConfigError, match="https://"):
+            TheVeil(
+                TheVeilConfig(
+                    api_key=VALID_KEY, base_url="http://gateway.example.com"
+                )
+            )
+
+    def test_rejects_http_on_ip_outside_loopback(self) -> None:
+        with pytest.raises(TheVeilConfigError, match="https://"):
+            TheVeil(
+                TheVeilConfig(api_key=VALID_KEY, base_url="http://10.0.0.1")
+            )
+
+    def test_accepts_https_everywhere(self) -> None:
+        for url in ("https://gateway.dsaveil.io", "https://10.0.0.1", "https://example.com"):
+            client = TheVeil(TheVeilConfig(api_key=VALID_KEY, base_url=url))
+            assert client.base_url == url
+
+
+class TestMaxResponseBytes:
+    def test_default_is_10mib(self) -> None:
+        client = TheVeil(TheVeilConfig(api_key=VALID_KEY))
+        assert client.max_response_bytes == 10 * 1024 * 1024
+
+    def test_accepts_positive_int(self) -> None:
+        client = TheVeil(
+            TheVeilConfig(api_key=VALID_KEY, max_response_bytes=1024)
+        )
+        assert client.max_response_bytes == 1024
+
+    def test_rejects_zero(self) -> None:
+        with pytest.raises(TheVeilConfigError, match="max_response_bytes"):
+            TheVeil(TheVeilConfig(api_key=VALID_KEY, max_response_bytes=0))
+
+    def test_rejects_negative(self) -> None:
+        with pytest.raises(TheVeilConfigError):
+            TheVeil(TheVeilConfig(api_key=VALID_KEY, max_response_bytes=-1))
+
+    def test_rejects_bool(self) -> None:
+        with pytest.raises(TheVeilConfigError):
+            TheVeil(
+                TheVeilConfig(api_key=VALID_KEY, max_response_bytes=True)  # type: ignore[arg-type]
+            )
+
+    def test_rejects_non_int(self) -> None:
+        with pytest.raises(TheVeilConfigError):
+            TheVeil(
+                TheVeilConfig(api_key=VALID_KEY, max_response_bytes=1024.0)  # type: ignore[arg-type]
+            )
+
+
 class TestApiKeyIsPrivate:
     def test_api_key_not_on_public_attrs(self) -> None:
         client = TheVeil(TheVeilConfig(api_key=VALID_KEY))

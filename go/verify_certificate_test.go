@@ -34,6 +34,14 @@ func TestVerifyCertificate_HappyPath_Anchored(t *testing.T) {
 	if result.WitnessAssertedIssuedAtISO != cert["issued_at"].(string) {
 		t.Errorf("IssuedAtISO preservation failed")
 	}
+	// Parity with TS/Python: a parsed time.Time counterpart of the ISO
+	// string must also be populated.
+	if result.WitnessAssertedIssuedAt.IsZero() {
+		t.Errorf("WitnessAssertedIssuedAt should be populated on happy path")
+	}
+	if result.WitnessAssertedIssuedAt.Year() != 2026 {
+		t.Errorf("WitnessAssertedIssuedAt year = %d, want 2026", result.WitnessAssertedIssuedAt.Year())
+	}
 }
 
 func TestVerifyCertificate_HappyPath_Pending(t *testing.T) {

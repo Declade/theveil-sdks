@@ -286,6 +286,59 @@ func TestGetCertificate_RejectsEmptyRequestID(t *testing.T) {
 	}
 }
 
+// -- MaxResponseBytes enforcement ---------------------------------------
+
+func TestGetCertificate_ResponseLargerThanCap_RaisesHTTPError(t *testing.T) {
+	big := strings.Repeat("x", 1024)
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/plain")
+		_, _ = w.Write([]byte(big))
+	}
+	server := httptest.NewServer(http.HandlerFunc(handler))
+	defer server.Close()
+	c, err := New(
+		validAPIKey,
+		WithBaseURL(server.URL),
+		WithMaxResponseBytes(256), // deliberately small
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.GetCertificate(context.Background(), "req_big")
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("want HTTPError, got %T (%v)", err, err)
+	}
+	if !strings.Contains(httpErr.Message, "MaxResponseBytes") {
+		t.Errorf("message should mention cap: %q", httpErr.Message)
+	}
+}
+
+func TestGetCertificate_ResponseUnderCap_Accepted(t *testing.T) {
+	cert := loadFixture(t, "cert-valid-anchored.json")
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_ = json.NewEncoder(w).Encode(cert)
+	}
+	server := httptest.NewServer(http.HandlerFunc(handler))
+	defer server.Close()
+	c, err := New(
+		validAPIKey,
+		WithBaseURL(server.URL),
+		WithMaxResponseBytes(1024*1024), // 1 MiB, ample
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.GetCertificate(context.Background(), cert["request_id"].(string))
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	if got.CertificateID != cert["certificate_id"].(string) {
+		t.Errorf("CertificateID mismatch")
+	}
+}
+
 // -- Header merge (SDK-owned keys win) ----------------------------------
 
 func TestGetCertificate_CallerHeadersMerged_SDKKeysWin(t *testing.T) {

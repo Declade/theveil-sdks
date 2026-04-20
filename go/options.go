@@ -10,9 +10,10 @@ import (
 type Option func(*clientConfig)
 
 type clientConfig struct {
-	baseURL string
-	timeout time.Duration
-	http    *http.Client
+	baseURL          string
+	timeout          time.Duration
+	http             *http.Client
+	maxResponseBytes int64
 }
 
 // WithBaseURL sets an explicit gateway base URL. Enterprise self-hosters
@@ -36,6 +37,18 @@ func WithTimeout(d time.Duration) Option {
 // client does.
 func WithHTTPClient(h *http.Client) Option {
 	return func(c *clientConfig) { c.http = h }
+}
+
+// WithMaxResponseBytes sets the maximum response-body size the SDK will
+// read from the gateway. Responses exceeding this cap are aborted with
+// *HTTPError rather than buffered into memory. Must be positive.
+//
+// The default is 10 MiB — deliberately generous; certificates are
+// typically <50 KB and messages responses rarely exceed 1 MB. The cap
+// exists as a DoS backstop against a malicious or misbehaving gateway,
+// not as a product constraint.
+func WithMaxResponseBytes(n int64) Option {
+	return func(c *clientConfig) { c.maxResponseBytes = n }
 }
 
 // CallOption configures a single Messages / GetCertificate call.

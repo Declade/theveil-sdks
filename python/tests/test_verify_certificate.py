@@ -397,6 +397,54 @@ class TestGoOracleCrossCheck:
 # -- Gap fills (bug-hunter C1–C5 equivalents) -----------------------------
 
 
+class TestVerifyCertificateBadTimestamp:
+    """A cert with a non-RFC-3339 issued_at that still signs + verifies must
+    surface as TheVeilCertificateError(malformed), not a raw ValueError.
+
+    The contract is: only TheVeilCertificateError / TypeError escape
+    verify_certificate. A gateway delivering a bad timestamp under a valid
+    signature is the one path that could violate this before the fix.
+    """
+
+    def test_malformed_issued_at_raises_typed_error(
+        self, witness_keypair: dict[str, str]
+    ) -> None:
+        # We can't sign a real Ed25519 signature without the private key on
+        # the wire, but the contract-violation scenario happens even before
+        # signature verification if parse accepts the string as structurally
+        # valid. So we construct the cert, skip signature verification by
+        # stubbing signable+verify via the ValidCert happy path first, then
+        # mutate issued_at on the parsed VeilCertificate, call _build_result
+        # directly — the unit under test.
+        from theveil.verify_certificate.pipeline import _build_result
+        from theveil.types import VeilCertificate
+
+        cert = VeilCertificate(
+            certificate_id="veil_x",
+            request_id="req_x",
+            protocol_version=2,
+            claims=[],
+            verification={
+                "signatures_valid": True,
+                "completeness": "COMPLETENESS_FULL",
+                "missing_services": [],
+                "temporal_consistent": True,
+                "data_visibility_consistent": True,
+                "isolation_verified": True,
+                "overall_verdict": "VERDICT_VERIFIED",
+            },
+            issued_at="not a valid timestamp",
+            witness_signature="AAAA",
+            witness_key_id="witness_v1",
+        )
+        with pytest.raises(TheVeilCertificateError) as exc_info:
+            _build_result(cert)
+        assert exc_info.value.reason == "malformed"
+        assert exc_info.value.certificate_id == "veil_x"
+        # Ensure the original ValueError is preserved via __cause__.
+        assert isinstance(exc_info.value.__cause__, ValueError)
+
+
 class TestVerifyCertificateGapFills:
     def test_empty_claims_raises_malformed_with_correct_message(
         self, cert_valid_anchored: dict[str, Any], witness_keypair: dict[str, str]

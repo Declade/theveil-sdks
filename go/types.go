@@ -1,6 +1,9 @@
 package theveil
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // VeilCertAnchorStatus names a value in the gateway's full-name protojson
 // enum form for cert.anchor_status.status.
@@ -143,13 +146,31 @@ type VerifyCertificateKeys struct {
 }
 
 // VerifyCertificateResult is returned from a successful VerifyCertificate.
+//
+// Both a parsed time.Time (ergonomic) and the raw ISO string (exact
+// signed bytes, full nanosecond precision when present) are surfaced —
+// matches TS `witnessAssertedIssuedAt: Date` + `witnessAssertedIssuedAtIso:
+// string` and Python's equivalent two-field pair.
 type VerifyCertificateResult struct {
-	CertificateID             string
-	RequestID                 string
-	WitnessKeyID              string
+	CertificateID string
+	RequestID     string
+	WitnessKeyID  string
+
+	// WitnessAssertedIssuedAt is the witness-asserted issuance time parsed
+	// from WitnessAssertedIssuedAtISO. NOT independently timestamped by an
+	// external TSA — callers requiring trusted timestamps for freshness
+	// gating should not rely on this field. External RFC 3161 verification
+	// lands in a follow-up arc.
+	//
+	// Parsed via time.Parse(time.RFC3339Nano, ...). Zero-value if parse
+	// fails (rare in practice — the Go assembler always emits
+	// RFC3339Nano form); use WitnessAssertedIssuedAtISO as the
+	// authoritative source.
+	WitnessAssertedIssuedAt    time.Time
 	WitnessAssertedIssuedAtISO string // raw RFC 3339 string as signed by witness
-	AnchorStatus              VeilCertAnchorStatus
-	OverallVerdict            VeilVerdict
+
+	AnchorStatus   VeilCertAnchorStatus
+	OverallVerdict VeilVerdict
 }
 
 // -- Proxy request / response types --------------------------------------

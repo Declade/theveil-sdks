@@ -18,6 +18,12 @@ package verify
 // VERDICT_* literals on the wire (UseProtoNames + default enum
 // serialization); the witness signs the short-form. The SDK must convert.
 
+// SignableProtocolVersion is the wire protocol the signable subset is
+// built against. Mirrors pipeline.SupportedProtocolVersion; these two
+// constants must update in lockstep. Lifting the literal out prevents
+// a future contributor from bumping one without the other.
+const SignableProtocolVersion = 2
+
 // verdictFullToShort maps the protojson full-name verdict to the Go
 // assembler's short-form. Unknown values are rejected upstream as
 // malformed.
@@ -90,7 +96,7 @@ func DeriveSignedBytes(in DeriveSignedBytesInput) ([]byte, error) {
 	signable := map[string]any{
 		"certificate_id":   in.CertificateID,
 		"request_id":       in.RequestID,
-		"protocol_version": 2,
+		"protocol_version": SignableProtocolVersion,
 		"claim_ids":        claimIDsAny,
 		"issued_at":        in.IssuedAt,
 		"overall_verdict":  goShortForm,

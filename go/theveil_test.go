@@ -170,6 +170,95 @@ func TestNew_RejectsNaNDurationDefensively(t *testing.T) {
 	}
 }
 
+// -- http:// base URL guard --
+
+func TestNew_RejectsHTTPOnPublicHost(t *testing.T) {
+	_, err := New(validAPIKey, WithBaseURL("http://gateway.example.com"))
+	var cfgErr *ConfigError
+	if !errors.As(err, &cfgErr) {
+		t.Fatalf("want ConfigError, got %T", err)
+	}
+	if !strings.Contains(cfgErr.Message, "https://") {
+		t.Errorf("message should mention https:// requirement: %q", cfgErr.Message)
+	}
+}
+
+func TestNew_RejectsHTTPOnNonLoopbackIP(t *testing.T) {
+	_, err := New(validAPIKey, WithBaseURL("http://10.0.0.1"))
+	var cfgErr *ConfigError
+	if !errors.As(err, &cfgErr) {
+		t.Fatalf("want ConfigError, got %T", err)
+	}
+}
+
+func TestNew_AcceptsHTTPForLoopbackHosts(t *testing.T) {
+	for _, url := range []string{
+		"http://localhost",
+		"http://localhost:8080",
+		"http://127.0.0.1",
+		"http://127.0.0.1:9090",
+		"http://[::1]",
+		"http://[::1]:1234",
+		"http://myservice.local",
+	} {
+		_, err := New(validAPIKey, WithBaseURL(url))
+		if err != nil {
+			t.Errorf("url=%q unexpectedly rejected: %v", url, err)
+		}
+	}
+}
+
+func TestNew_AcceptsHTTPSEverywhere(t *testing.T) {
+	for _, url := range []string{
+		"https://gateway.example.com",
+		"https://10.0.0.1",
+		"https://public-gateway.example.com",
+	} {
+		_, err := New(validAPIKey, WithBaseURL(url))
+		if err != nil {
+			t.Errorf("url=%q unexpectedly rejected: %v", url, err)
+		}
+	}
+}
+
+// -- MaxResponseBytes --
+
+func TestNew_DefaultMaxResponseBytes(t *testing.T) {
+	c, err := New(validAPIKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.maxResponseBytes != DefaultMaxResponseBytes {
+		t.Errorf("got %d, want %d", c.maxResponseBytes, DefaultMaxResponseBytes)
+	}
+}
+
+func TestNew_AcceptsPositiveMaxResponseBytes(t *testing.T) {
+	c, err := New(validAPIKey, WithMaxResponseBytes(1024))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.maxResponseBytes != 1024 {
+		t.Errorf("got %d", c.maxResponseBytes)
+	}
+}
+
+func TestNew_RejectsZeroMaxResponseBytes(t *testing.T) {
+	_, err := New(validAPIKey, WithMaxResponseBytes(0))
+	var cfgErr *ConfigError
+	if !errors.As(err, &cfgErr) {
+		t.Fatalf("want ConfigError, got %T", err)
+	}
+}
+
+func TestNew_RejectsNegativeMaxResponseBytes(t *testing.T) {
+	_, err := New(validAPIKey, WithMaxResponseBytes(-1))
+	var cfgErr *ConfigError
+	if !errors.As(err, &cfgErr) {
+		t.Fatalf("want ConfigError, got %T", err)
+	}
+}
+
 // -- HTTPClient injection --
 
 func TestNew_AcceptsCustomHTTPClient(t *testing.T) {

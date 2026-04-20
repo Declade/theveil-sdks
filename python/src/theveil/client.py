@@ -49,6 +49,16 @@ _DEFAULT_BASE_URL = "https://gateway.dsaveil.io"
 # 30 seconds, matching TS DEFAULT_TIMEOUT_MS = 30_000.
 _DEFAULT_TIMEOUT_S = 30.0
 
+# 10 MiB — deliberately generous; certificates are typically <50 KB and
+# messages responses rarely exceed 1 MB. The cap exists as a DoS backstop
+# against a malicious or misbehaving gateway returning a pathologically
+# large body, not as a product constraint. Callers expecting larger bodies
+# can raise it via TheVeilConfig.max_response_bytes.
+_DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
 
 def _normalize_base_url(raw: str) -> str:
     try:
@@ -61,6 +71,17 @@ def _normalize_base_url(raw: str) -> str:
         )
     if not parsed.netloc:
         raise TheVeilConfigError(f"Invalid base_url: {raw}")
+    # Security: reject ``http://`` outside loopback / mDNS-local hosts so a
+    # misconfigured base_url cannot silently ship the api_key across a
+    # network in cleartext. Enterprise self-hosters binding to localhost
+    # over HTTP stay allowed; anyone intending a non-loopback production
+    # endpoint must use https://.
+    if parsed.scheme == "http":
+        host = (parsed.hostname or "").lower()
+        if host not in _LOOPBACK_HOSTS and not host.endswith(".local"):
+            raise TheVeilConfigError(
+                f"base_url must use https:// for non-loopback hosts; got http://{host}"
+            )
     return raw.rstrip("/")
 
 
@@ -119,6 +140,20 @@ class TheVeil:
         else:
             timeout_s = _validate_timeout_s(config.timeout, "timeout")
 
+        if config.max_response_bytes is None:
+            max_response_bytes = _DEFAULT_MAX_RESPONSE_BYTES
+        else:
+            if (
+                not isinstance(config.max_response_bytes, int)
+                or isinstance(config.max_response_bytes, bool)
+                or config.max_response_bytes <= 0
+            ):
+                raise TheVeilConfigError(
+                    f"Invalid max_response_bytes: {config.max_response_bytes!r} "
+                    "— must be a positive int"
+                )
+            max_response_bytes = config.max_response_bytes
+
         # API key stored on a name-mangled private attribute. Python has no
         # JS-style hard private fields, but ``__api_key`` triggers name
         # mangling (``_TheVeil__api_key``) which keeps the credential out
@@ -128,6 +163,7 @@ class TheVeil:
         self.__api_key = config.api_key
         self.base_url = base_url
         self.timeout = timeout_s
+        self.max_response_bytes = max_response_bytes
 
     # -- Public API ----------------------------------------------------------
 
@@ -280,23 +316,50 @@ class TheVeil:
 
         url = f"{self.base_url}{path if path.startswith('/') else '/' + path}"
 
+        status_code: int
+        reason_phrase: str
+        raw_bytes: bytes
         try:
             with httpx.Client(timeout=httpx.Timeout(timeout_s)) as client:
-                response = client.request(
+                with client.stream(
                     method=method,
                     url=url,
                     headers=merged,
                     content=body,
-                )
+                ) as response:
+                    status_code = response.status_code
+                    reason_phrase = response.reason_phrase
+                    # Stream + accumulate so a 10 GB body can't OOM the client.
+                    # We read one extra byte past the cap so the >cap check
+                    # can distinguish "exactly cap" from "over cap".
+                    received = 0
+                    chunks: list[bytes] = []
+                    over_cap = False
+                    for chunk in response.iter_bytes():
+                        received += len(chunk)
+                        if received > self.max_response_bytes:
+                            over_cap = True
+                            break
+                        chunks.append(chunk)
+                    if over_cap:
+                        raise TheVeilHttpError(
+                            "response body exceeded max_response_bytes cap of "
+                            f"{self.max_response_bytes}",
+                            status=status_code,
+                            body=None,
+                        )
+                    raw_bytes = b"".join(chunks)
         except httpx.TimeoutException as exc:
             raise TheVeilTimeoutError(
                 f"Request timed out after {timeout_s}s",
                 cause=exc,
             ) from exc
+        except TheVeilError:
+            raise
         except httpx.HTTPError as exc:
             raise TheVeilError("Request failed", cause=exc) from exc
 
-        text = response.text
+        text = raw_bytes.decode("utf-8", errors="replace")
         parsed_body: Any
         if text:
             try:
@@ -307,14 +370,14 @@ class TheVeil:
         else:
             parsed_body = text
 
-        if not (200 <= response.status_code < 300):
+        if not (200 <= status_code < 300):
             raise TheVeilHttpError(
-                f"TheVeil request failed: {response.status_code} {response.reason_phrase}",
-                status=response.status_code,
+                f"TheVeil request failed: {status_code} {reason_phrase}",
+                status=status_code,
                 body=parsed_body,
             )
 
-        return response.status_code, parsed_body
+        return status_code, parsed_body
 
 
 def _parse_proxy_response(status: int, body: Any) -> ProxyResponse:

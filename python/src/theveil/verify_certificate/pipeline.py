@@ -13,13 +13,16 @@ from theveil.types import (
     VerifyCertificateResult,
 )
 from theveil.verify_certificate.parse import parse_certificate
-from theveil.verify_certificate.signable import derive_witness_signed_bytes
+from theveil.verify_certificate.signable import (
+    SIGNABLE_PROTOCOL_VERSION,
+    derive_witness_signed_bytes,
+)
 from theveil.verify_certificate.signature import verify_ed25519
 
 __all__ = ["verify_certificate"]
 
 
-SUPPORTED_PROTOCOL_VERSION = 2
+SUPPORTED_PROTOCOL_VERSION = SIGNABLE_PROTOCOL_VERSION
 
 
 def verify_certificate(
@@ -134,11 +137,27 @@ def verify_certificate(
 
 
 def _build_result(cert: VeilCertificate) -> VerifyCertificateResult:
+    try:
+        issued_at = _parse_iso(cert.issued_at)
+    except ValueError as exc:
+        # Signature has already verified at this point, so the witness signed
+        # over whatever bytes cert.issued_at contains — but the public contract
+        # of verify_certificate is that only TheVeilCertificateError / TypeError
+        # escape. A malformed-but-signed timestamp surfaces as malformed
+        # (gateway delivered a bad field under a valid signature). Callers who
+        # only need the raw ISO string can read
+        # ``witness_asserted_issued_at_iso`` on the result on the success path.
+        raise TheVeilCertificateError(
+            f"cert.issued_at is not a valid RFC 3339 timestamp: {cert.issued_at!r}",
+            reason="malformed",
+            certificate_id=cert.certificate_id,
+            cause=exc,
+        ) from exc
     return VerifyCertificateResult(
         certificate_id=cert.certificate_id,
         request_id=cert.request_id,
         witness_key_id=cert.witness_key_id,
-        witness_asserted_issued_at=_parse_iso(cert.issued_at),
+        witness_asserted_issued_at=issued_at,
         witness_asserted_issued_at_iso=cert.issued_at,
         anchor_status=(
             cert.anchor_status.status if cert.anchor_status is not None
@@ -151,10 +170,11 @@ def _build_result(cert: VeilCertificate) -> VerifyCertificateResult:
 def _parse_iso(iso: str) -> datetime:
     """Parse an RFC 3339 timestamp into ``datetime`` with microsecond precision.
 
-    The witness-asserted issued-at may carry nanosecond precision; Python
-    ``datetime`` is microsecond-resolution, so sub-microsecond digits are
-    dropped. Callers requiring full precision should read the
-    ``witness_asserted_issued_at_iso`` field (raw string, unchanged).
+    Raises ValueError on non-RFC-3339 input. The witness-asserted issued-at
+    may carry nanosecond precision; Python ``datetime`` is microsecond-
+    resolution, so sub-microsecond digits are dropped. Callers requiring
+    full precision should read the ``witness_asserted_issued_at_iso``
+    field (raw string, unchanged).
     """
 
     # datetime.fromisoformat in 3.11+ accepts the "Z" suffix and nanoseconds
@@ -166,16 +186,13 @@ def _parse_iso(iso: str) -> datetime:
     # Truncate fractional seconds to microsecond resolution (6 digits).
     dot = s.find(".")
     if dot != -1:
-        # Find end of fractional digits
         end = dot + 1
         while end < len(s) and s[end].isdigit():
             end += 1
         frac = s[dot + 1 : end]
         if len(frac) > 6:
             s = s[:dot] + "." + frac[:6] + s[end:]
-    try:
-        return datetime.fromisoformat(s)
-    except ValueError:
-        # Fall back: strip timezone and parse the naive form — preserves
-        # v1's "do our best; the ISO string is the authoritative form" posture.
-        return datetime.fromisoformat(s.split("+")[0].split("-", 3)[0])
+    # Let ValueError propagate; the caller in _build_result wraps it as
+    # TheVeilCertificateError(reason="malformed") to preserve the public
+    # contract of verify_certificate.
+    return datetime.fromisoformat(s)

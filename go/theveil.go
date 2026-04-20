@@ -20,10 +20,11 @@ import (
 // Client is safe for concurrent use by multiple goroutines; it reuses a
 // single *http.Client under the hood (stdlib-safe per the net/http docs).
 type Client struct {
-	apiKey  string
-	baseURL string
-	timeout time.Duration
-	http    *http.Client
+	apiKey           string
+	baseURL          string
+	timeout          time.Duration
+	http             *http.Client
+	maxResponseBytes int64
 }
 
 // DefaultBaseURL is the hosted gateway for solo-dev tier. Enterprise
@@ -33,6 +34,10 @@ const DefaultBaseURL = "https://gateway.dsaveil.io"
 // DefaultTimeout is the default per-call timeout. Matches the TS SDK's
 // DEFAULT_TIMEOUT_MS = 30_000.
 const DefaultTimeout = 30 * time.Second
+
+// DefaultMaxResponseBytes caps the size of a response body the SDK will
+// buffer. 10 MiB — see WithMaxResponseBytes for rationale.
+const DefaultMaxResponseBytes int64 = 10 * 1024 * 1024
 
 var apiKeyPattern = regexp.MustCompile(`^dsa_[0-9a-f]{32}$`)
 
@@ -46,8 +51,9 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 	}
 
 	cfg := clientConfig{
-		baseURL: DefaultBaseURL,
-		timeout: DefaultTimeout,
+		baseURL:          DefaultBaseURL,
+		timeout:          DefaultTimeout,
+		maxResponseBytes: DefaultMaxResponseBytes,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -64,16 +70,23 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 		}
 	}
 
+	if cfg.maxResponseBytes <= 0 {
+		return nil, &ConfigError{
+			Message: fmt.Sprintf("invalid maxResponseBytes: %d — must be a positive int64", cfg.maxResponseBytes),
+		}
+	}
+
 	httpClient := cfg.http
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
 
 	return &Client{
-		apiKey:  apiKey,
-		baseURL: normalized,
-		timeout: cfg.timeout,
-		http:    httpClient,
+		apiKey:           apiKey,
+		baseURL:          normalized,
+		timeout:          cfg.timeout,
+		http:             httpClient,
+		maxResponseBytes: cfg.maxResponseBytes,
 	}, nil
 }
 
@@ -258,11 +271,21 @@ func (c *Client) do(
 	}
 	defer resp.Body.Close()
 
-	respBytes, err := io.ReadAll(resp.Body)
+	// Cap the read at maxResponseBytes + 1 so we can distinguish "exactly cap"
+	// from "exceeded cap" without buffering the entire pathological body.
+	limitedReader := io.LimitReader(resp.Body, c.maxResponseBytes+1)
+	respBytes, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return resp.StatusCode, nil, &NetworkError{
 			Message: "failed to read response body: " + err.Error(),
 			Err:     err,
+		}
+	}
+	if int64(len(respBytes)) > c.maxResponseBytes {
+		return resp.StatusCode, nil, &HTTPError{
+			Status:  resp.StatusCode,
+			Body:    nil,
+			Message: fmt.Sprintf("response body exceeded MaxResponseBytes cap of %d", c.maxResponseBytes),
 		}
 	}
 
@@ -304,7 +327,8 @@ func decodeInto(body any, dst any) error {
 }
 
 // normalizeBaseURL parses raw, confirms http/https scheme + non-empty
-// host, and strips trailing slashes.
+// host, rejects http:// outside loopback / mDNS-local hosts to prevent
+// cleartext api-key leakage, and strips trailing slashes.
 func normalizeBaseURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -317,6 +341,18 @@ func normalizeBaseURL(raw string) (string, error) {
 	}
 	if u.Host == "" {
 		return "", &ConfigError{Message: "baseURL must have a host: " + raw}
+	}
+	if u.Scheme == "http" {
+		host := strings.ToLower(u.Hostname())
+		loopback := host == "localhost" || host == "127.0.0.1" || host == "::1"
+		if !loopback && !strings.HasSuffix(host, ".local") {
+			return "", &ConfigError{
+				Message: fmt.Sprintf(
+					"baseURL must use https:// for non-loopback hosts; got http://%s",
+					host,
+				),
+			}
+		}
 	}
 	return strings.TrimRight(raw, "/"), nil
 }

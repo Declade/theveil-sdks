@@ -33,7 +33,14 @@ from theveil.errors import TheVeilCertificateError
 from theveil.types import VeilCertificate, VeilVerdict
 from theveil.verify_certificate.canonical_json import canonical_json
 
-__all__ = ["derive_witness_signed_bytes"]
+__all__ = ["derive_witness_signed_bytes", "SIGNABLE_PROTOCOL_VERSION"]
+
+
+# Mirrors pipeline.SUPPORTED_PROTOCOL_VERSION. The two must update in
+# lockstep; importing from pipeline would create a circular import, so
+# this module declares its own constant and the pipeline module asserts
+# the values agree at import time.
+SIGNABLE_PROTOCOL_VERSION = 2
 
 
 _VERDICT_FULL_TO_SHORT: dict[VeilVerdict, str] = {
@@ -91,13 +98,13 @@ def derive_witness_signed_bytes(cert: VeilCertificate) -> bytes:
         claim_ids.append(c.claim_id)
 
     # The signable mirrors assembler.go:117-125 field-for-field.
-    # protocol_version: Go int 2 → JSON integer 2.
+    # protocol_version: Go int → JSON integer.
     # overall_verdict: Go short string → JSON quoted string (default path).
     # All other fields are strings or string arrays, pass-through.
     signable = {
         "certificate_id": cert.certificate_id,
         "request_id": cert.request_id,
-        "protocol_version": 2,
+        "protocol_version": SIGNABLE_PROTOCOL_VERSION,
         "claim_ids": claim_ids,
         "issued_at": cert.issued_at,
         "overall_verdict": go_short_form,

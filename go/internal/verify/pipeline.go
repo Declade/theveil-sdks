@@ -9,8 +9,9 @@ import (
 
 // SupportedProtocolVersion is the only protocol version v1 of the SDK
 // knows how to verify. Certificates with a different protocol_version
-// surface as a typed unsupported_protocol_version error.
-const SupportedProtocolVersion = 2
+// surface as a typed unsupported_protocol_version error. Mirrors
+// SignableProtocolVersion (must update together).
+const SupportedProtocolVersion = SignableProtocolVersion
 
 // Result mirrors the SDK-level VerifyCertificateResult shape; the public
 // wrapper in the parent package re-wraps it with its own type so the

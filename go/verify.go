@@ -3,6 +3,7 @@ package theveil
 import (
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/declade/theveil-sdks/go/internal/verify"
 )
@@ -55,10 +56,18 @@ func VerifyCertificate(cert any, keys VerifyCertificateKeys) (*VerifyCertificate
 		}
 	}
 
+	// Best-effort parse of the witness-asserted ISO string into time.Time.
+	// If parse fails (malformed-but-signed timestamp — theoretically
+	// possible under a compromised witness; the Go assembler in practice
+	// always emits RFC3339Nano), leave the zero-value. Callers requiring
+	// definitive precision should prefer WitnessAssertedIssuedAtISO.
+	parsed, _ := time.Parse(time.RFC3339Nano, result.IssuedAtISO)
+
 	return &VerifyCertificateResult{
 		CertificateID:              result.CertificateID,
 		RequestID:                  result.RequestID,
 		WitnessKeyID:               result.WitnessKeyID,
+		WitnessAssertedIssuedAt:    parsed,
 		WitnessAssertedIssuedAtISO: result.IssuedAtISO,
 		AnchorStatus:               VeilCertAnchorStatus(result.AnchorStatus),
 		OverallVerdict:             VeilVerdict(result.OverallVerdict),

@@ -240,6 +240,34 @@ class TestMalformed200:
         assert isinstance(err.body, dict)
 
 
+class TestMaxResponseBytesEnforcement:
+    @respx.mock
+    def test_response_larger_than_cap_raises_http_error(self) -> None:
+        # Deliberately ship 1 KB when the cap is 256 bytes.
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_big").respond(
+            200, text="x" * 1024, headers={"content-type": "text/plain"}
+        )
+        client = TheVeil(
+            TheVeilConfig(api_key=VALID_KEY, max_response_bytes=256)
+        )
+        with pytest.raises(TheVeilHttpError, match="max_response_bytes"):
+            client.get_certificate("req_big")
+
+    @respx.mock
+    def test_response_at_cap_is_accepted(
+        self, cert_valid_anchored: dict[str, Any]
+    ) -> None:
+        # A normal-sized cert fits easily under the 1 MiB cap we set.
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_ok").respond(
+            200, json=cert_valid_anchored
+        )
+        client = TheVeil(
+            TheVeilConfig(api_key=VALID_KEY, max_response_bytes=1024 * 1024)
+        )
+        cert = client.get_certificate("req_ok")
+        assert cert.certificate_id == cert_valid_anchored["certificate_id"]
+
+
 class TestPerCallHeaderMerge:
     @respx.mock
     def test_caller_headers_merged_sdk_owned_keys_win(

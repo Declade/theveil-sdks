@@ -49,15 +49,25 @@ class TheVeilConfig:
     Attributes:
         api_key: DSA API key. Must match ``^dsa_[0-9a-f]{32}$``.
         base_url: Gateway base URL. Defaults to the hosted gateway.
+            Must be ``https://`` for non-loopback hosts; ``http://`` is
+            accepted only for ``localhost`` / ``127.0.0.1`` / ``::1`` /
+            ``*.local`` to prevent cleartext api-key leakage.
         timeout: Default per-call timeout in seconds. Positive finite float.
             TS SDK equivalent is ``timeoutMs`` (milliseconds); Python uses
             seconds to match ``httpx`` / ``requests`` / ``openai-python`` /
             ``anthropic-python`` convention.
+        max_response_bytes: Maximum response-body size the SDK will read
+            from the gateway, in bytes. Responses exceeding this cap raise
+            :class:`TheVeilHttpError` instead of being buffered into
+            memory. Defaults to 10 MiB (10 * 1024 * 1024). Pro / enterprise
+            callers expecting larger bodies should raise the cap
+            explicitly.
     """
 
     api_key: str
     base_url: str | None = None
     timeout: float | None = None
+    max_response_bytes: int | None = None
 
 
 # ---------------------------------------------------------------------------
