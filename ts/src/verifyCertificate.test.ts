@@ -401,6 +401,33 @@ describe('verifyCertificate — bug-hunter C4/C5 gap fills', () => {
     ).rejects.toThrow(TypeError);
   });
 
+  it('throws malformed with a semantically-correct message on empty-claims cert (N2)', async () => {
+    const cert = loadFixture('cert-valid-anchored.json');
+    cert.claims = [];
+    try {
+      await verifyCertificate(cert, keysAll());
+      throw new Error('expected to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TheVeilCertificateError);
+      const typed = err as TheVeilCertificateError;
+      expect(typed.reason).toBe('malformed');
+      expect(typed.message).toMatch(/claims is empty/);
+    }
+  });
+
+  it('throws malformed on sparse-array hole inside claims (N1)', async () => {
+    const cert = loadFixture('cert-valid-anchored.json');
+    // Construct a sparse array: one valid claim at [0], hole at [1], valid
+    // claim at [2]. Array.prototype.map would skip the hole; the new
+    // for-loop with `i in cert.claims` catches it.
+    const sparse: unknown[] = [cert.claims[0]];
+    sparse[2] = cert.claims[1];
+    (cert as unknown as { claims: unknown[] }).claims = sparse;
+    await expect(verifyCertificate(cert, keysAll())).rejects.toMatchObject({
+      reason: 'malformed',
+    });
+  });
+
   it('resists Object.prototype pollution via overall_verdict="__proto__"', async () => {
     // Without Object.hasOwn (or a null-prototype lookup table),
     // VERDICT_FULL_TO_SHORT['__proto__'] would resolve to Object.prototype,

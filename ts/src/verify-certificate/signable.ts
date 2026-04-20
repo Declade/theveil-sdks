@@ -50,10 +50,21 @@ const VERDICT_FULL_TO_SHORT: Record<VeilVerdict, string> = Object.assign(
 );
 
 export function deriveWitnessSignedBytes(cert: VeilCertificate): Uint8Array {
+  // N2 — explicit empty-claims check before the request-id invariant guard
+  // so the error message is semantically correct. Without this, an empty
+  // claims[] array falls through to the C2 invariant check and the thrown
+  // message talks about a mismatched request_id even though the real issue
+  // is "no claims at all".
+  if (cert.claims.length === 0) {
+    throw new TheVeilCertificateError(
+      'cert.claims is empty — certificate must contain at least one claim',
+      { reason: 'malformed', certificateId: cert.certificate_id },
+    );
+  }
+
   // C2 defensive guard — fail loudly on invariant drift. Optional chaining
-  // on an empty claims[] yields undefined; strict-inequality catches it
-  // and produces a single clean `malformed` throw rather than a downstream
-  // `invalid_signature` that looks identical to tamper/wrong-key.
+  // on the first element would handle sparse-hole-at-index-0 cases too, but
+  // those are separately rejected by the per-claim validator below.
   if (cert.claims[0]?.request_id !== cert.request_id) {
     throw new TheVeilCertificateError(
       'cert.request_id does not match cert.claims[0].request_id (gateway invariant violated)',
@@ -79,15 +90,31 @@ export function deriveWitnessSignedBytes(cert: VeilCertificate): Uint8Array {
   // Without this, a JS-only caller with `claims: [{claim_id: null}]` would
   // pass structural parse + C2 and surface as a raw TypeError from
   // canonical-json's "unsupported value type undefined/null" path.
-  const claimIds: string[] = cert.claims.map((c, i) => {
+  //
+  // N1 — index-based for-loop instead of .map. Array.prototype.map skips
+  // sparse-array holes (JS permits `const c = [validClaim]; c[2] = x;`
+  // which creates a hole at index 1). .map would skip the hole, produce
+  // a sparse claim_ids array, and canonical-JSON would emit invalid
+  // `[..,..]`-with-adjacent-commas bytes — surfacing downstream as
+  // invalid_signature instead of the correct malformed. The explicit
+  // `i in cert.claims` check detects the hole and throws malformed.
+  const claimIds: string[] = [];
+  for (let i = 0; i < cert.claims.length; i++) {
+    if (!(i in cert.claims)) {
+      throw new TheVeilCertificateError(
+        `cert.claims[${i}] is a sparse-array hole`,
+        { reason: 'malformed', certificateId: cert.certificate_id },
+      );
+    }
+    const c = cert.claims[i];
     if (!c || typeof c.claim_id !== 'string') {
       throw new TheVeilCertificateError(
         `cert.claims[${i}].claim_id must be a string`,
         { reason: 'malformed', certificateId: cert.certificate_id },
       );
     }
-    return c.claim_id;
-  });
+    claimIds.push(c.claim_id);
+  }
 
   // The signable map mirrors Go assembler.go:117-125 field-for-field.
   // protocol_version: Go int 2 → JSON integer 2 (via rawIntegerNumber).
