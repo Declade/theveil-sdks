@@ -1,0 +1,14 @@
+{
+  "certificate_id": "veil_abc",
+  "request_id": "req_123",
+  "protocol_version": { "$rawInt": 2 },
+  "claim_ids": ["clm_1", "clm_2"],
+  "issued_at": "2026-04-20T05:24:12.710321721Z",
+  "overall_verdict": { "$rawInt": 1 },
+  "witness_key_id": "witness_v1",
+  "_escape_probe": "<>&\u2028\u2029",
+  "_array_of_maps_probe": [
+    { "b": { "$rawInt": 1 }, "a": { "$rawInt": 2 } },
+    { "z": { "$rawInt": 3 }, "y": { "$rawInt": 4 } }
+  ]
+}
