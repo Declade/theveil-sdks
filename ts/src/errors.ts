@@ -34,3 +34,28 @@ export class TheVeilTimeoutError extends TheVeilError {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+export type VerifyCertificateFailureReason =
+  | 'malformed'
+  | 'unsupported_protocol_version'
+  | 'witness_mismatch'
+  | 'witness_signature_missing'
+  | 'invalid_signature';
+
+export interface TheVeilCertificateErrorOptions extends ErrorOptions {
+  reason: VerifyCertificateFailureReason;
+  certificateId?: string;
+}
+
+export class TheVeilCertificateError extends TheVeilError {
+  public readonly reason: VerifyCertificateFailureReason;
+  public readonly certificateId?: string;
+
+  constructor(message: string, options: TheVeilCertificateErrorOptions) {
+    super(message, options);
+    this.name = 'TheVeilCertificateError';
+    this.reason = options.reason;
+    this.certificateId = options.certificateId;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
