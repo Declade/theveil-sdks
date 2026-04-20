@@ -9,7 +9,11 @@ import type {
   ProxyMessagesRequest,
   ProxyResponse,
   TheVeilConfig,
+  VeilCertificate,
+  VerifyCertificateKeys,
+  VerifyCertificateResult,
 } from './types.js';
+import { verifyCertificate as verifyCertificateImpl } from './verify-certificate/index.js';
 
 const API_KEY_PATTERN = /^dsa_[0-9a-f]{32}$/;
 
@@ -145,6 +149,19 @@ export class TheVeil {
         signal: options?.signal,
       },
     );
+  }
+
+  // Verify a Veil Certificate's witness Ed25519 signature against the
+  // certificate's canonical JSON core fields. See
+  // ./verify-certificate/index.ts for full JSDoc, failure-reason list,
+  // and key-format conventions. External RFC 3161 timestamp + Sigstore
+  // Rekor transparency-log verification are out of scope for this SDK
+  // release — see session 2b-cert-strong for the follow-up.
+  async verifyCertificate(
+    cert: VeilCertificate,
+    keys: VerifyCertificateKeys,
+  ): Promise<VerifyCertificateResult> {
+    return verifyCertificateImpl(cert, keys);
   }
 
   private async request<T>(

@@ -321,3 +321,18 @@ describe('verifyCertificate — ordering + error shape', () => {
     }
   });
 });
+
+describe('TheVeil#verifyCertificate client delegation', () => {
+  // Client-level smoke test — ensures the public method on TheVeil
+  // delegates to the standalone verify function without drift.
+  it('delegates to verify-certificate/index and returns the same result shape', async () => {
+    // Avoid cross-file import cycles by importing inline.
+    const { TheVeil } = await import('./client.js');
+    const client = new TheVeil({ apiKey: 'dsa_' + '0'.repeat(32) });
+    const cert = loadFixture('cert-valid-anchored.json');
+    const result = await client.verifyCertificate(cert, keysAll());
+    expect(result.witnessKeyId).toBe('witness_v1');
+    expect(result.anchorStatus).toBe('ANCHOR_STATUS_ANCHORED');
+    expect(result.overallVerdict).toBe('VERDICT_VERIFIED');
+  });
+});
