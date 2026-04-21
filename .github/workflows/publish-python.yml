@@ -36,7 +36,102 @@ jobs:
         run: pytest
       - name: Build
         run: python -m build
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
-        with:
-          packages-dir: python/dist
+      - name: Mint PyPI OIDC token
+        id: mint
+        shell: bash
+        run: |
+          set -euo pipefail
+          # NO shell tracing per design note Section 2.4.1
+
+          # Step 1: Get GitHub OIDC JWT (audience=pypi hardcoded per Section 2.1)
+          # $ACTIONS_ID_TOKEN_REQUEST_URL has existing query params → & separator
+          GH_OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=pypi"
+
+          GH_RESPONSE=$(curl -sSf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$GH_OIDC_URL") || {
+            echo "::error::GitHub OIDC request failed (curl exit $?)"
+            exit 1
+          }
+
+          # Parse GitHub OIDC response. Split parse-error from missing-field
+          # so operators can distinguish "GitHub sent non-JSON" (GitHub Actions
+          # infra issue) from "valid JSON, .value missing" (upstream schema drift).
+          GH_TOKEN=$(printf '%s' "$GH_RESPONSE" | jq -r '.value // empty' 2>/dev/null) || {
+            echo "::error::GitHub OIDC response was not valid JSON"
+            exit 1
+          }
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::GitHub OIDC response missing .value field"
+            exit 1
+          fi
+
+          # Step 2: Exchange GitHub JWT for PyPI publish token
+          # Capture both stdout and stderr to diagnose transport failures
+          MINT_RESPONSE=$(curl -sSf \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --data-raw "{\"token\": \"$GH_TOKEN\"}" \
+            https://pypi.org/_/oidc/mint-token 2>&1) || {
+            CURL_EXIT=$?
+            # Transport failure contract per design note Section 5.3.1
+            case $CURL_EXIT in
+              6)  echo "::error::PyPI mint-token DNS failure (curl exit 6)" ;;
+              7)  echo "::error::PyPI mint-token connection refused (curl exit 7)" ;;
+              28) echo "::error::PyPI mint-token timeout (curl exit 28)" ;;
+              35) echo "::error::PyPI mint-token TLS handshake failure (curl exit 35)" ;;
+              56) echo "::error::PyPI mint-token network recv error (curl exit 56)" ;;
+              *)  echo "::error::PyPI mint-token transport failure (curl exit $CURL_EXIT)" ;;
+            esac
+            echo "::error::Check https://status.python.org for PyPI availability"
+            exit 1
+          }
+
+          # Parse PyPI mint-token response. Split parse-error from missing-field
+          # so operators can distinguish "PyPI sent non-JSON" (CDN/outage HTML
+          # error page — check status.python.org) from "valid JSON, .token
+          # missing" (trusted-publisher configuration audit required).
+          PYPI_TOKEN=$(printf '%s' "$MINT_RESPONSE" | jq -r '.token // empty' 2>/dev/null) || {
+            echo "::error::PyPI mint-token response was not valid JSON"
+            echo "::error::Check https://status.python.org for PyPI availability"
+            # Do NOT echo full response body — may contain sensitive fields in error cases
+            exit 1
+          }
+          if [ -z "$PYPI_TOKEN" ]; then
+            echo "::error::PyPI mint-token response missing .token field"
+            # Do NOT echo full response body — may contain sensitive fields in error cases
+            exit 1
+          fi
+
+          # Mask BEFORE any write — per Section 2.4 ordering invariant
+          echo "::add-mask::$PYPI_TOKEN"
+
+          # Write to step output ONLY (per locked 8.5)
+          # NOT $GITHUB_ENV, $GITHUB_STEP_SUMMARY, or disk
+          echo "pypi_token=$PYPI_TOKEN" >> "$GITHUB_OUTPUT"
+      - name: Upload to PyPI
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ steps.mint.outputs.pypi_token }}
+          TWINE_REPOSITORY_URL: https://upload.pypi.org/legacy/
+        run: |
+          set -euo pipefail
+          # NO shell tracing per Section 2.4.1 — TWINE_PASSWORD is in env
+
+          # pip install twine (NOT pip upgrade — per design note Section 3)
+          # Failure contract per Section 5.0
+          python -m pip install 'twine==6.2.0' || {
+            echo "::error::Failed to install twine==6.2.0; see pip output above"
+            exit 1
+          }
+
+          # Pre-upload check per Section 3.3
+          twine check python/dist/* || {
+            echo "::error::twine check failed — dists malformed; upload aborted"
+            exit 1
+          }
+
+          # Upload per Section 3.4 — --non-interactive, no --skip-existing (locked 8.2)
+          twine upload --non-interactive python/dist/*
