@@ -1,6 +1,6 @@
 # The Veil SDKs
 
-Clients for The Veil — privacy-preserving AI infrastructure. This monorepo hosts three official SDKs at parity: TypeScript, Python, and Go.
+Clients for The Veil @dsaveil.io — privacy-preserving AI infrastructure. This monorepo hosts three official SDKs at parity: TypeScript, Python, and Go.
 
 ## Status
 
