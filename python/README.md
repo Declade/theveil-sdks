@@ -100,6 +100,11 @@ All SDK errors inherit from `TheVeilError`:
 - `TheVeilConfigError` — bad constructor input or per-call option.
 - `TheVeilHttpError` — gateway returned non-2xx (or 202 from
   `get_certificate`); exposes `.status` and `.body`.
+- `TheVeilResponseValidationError` — gateway returned 2xx but the body
+  doesn't fit the declared response type (typically a gateway bug or
+  version skew); exposes `.body` (raw response). The underlying
+  `pydantic.ValidationError` or `ValueError` is preserved on
+  `__cause__` for field-level inspection.
 - `TheVeilTimeoutError` — request exceeded timeout.
 - `TheVeilCertificateError` — `verify_certificate` failed; exposes
   `.reason` and (when available) `.certificate_id`.
@@ -118,12 +123,19 @@ Intentional divergences where TS semantics don't port cleanly to Python:
   identical (positive finite).
 - **Abort/cancel**: v1 sync Python has timeout only; no `signal` analogue.
   Cancellation arrives with the async client in a later arc.
-- **Malformed 200 body**: TS passes through as raw text typed as
+- **Malformed 2xx body**: TS passes through as raw text typed as
   `VeilCertificate` (thin transport); Python calls
-  `VeilCertificate.model_validate` and wraps `ValidationError` as
-  `TheVeilHttpError(status=200, body=<raw>)`. Both languages surface a
-  typed SDK error to the caller; Python fails at fetch, TS at
-  `verify_certificate`.
+  `VeilCertificate.model_validate` and, on a shape mismatch, raises
+  the dedicated `TheVeilResponseValidationError` — NOT
+  `TheVeilHttpError`. The Python class follows the established
+  Python-SDK precedent (`openai.APIResponseValidationError`,
+  `anthropic.APIResponseValidationError`): an HTTP 200 is not an HTTP
+  error, and callers benefit from being able to catch "transport
+  failed" separately from "body doesn't fit the declared type." TS's
+  pass-through model remains the authoritative behaviour for the TS
+  surface; Python fails earlier (at fetch) because Pydantic validates
+  at deserialize-time, and the failure class names the reason
+  precisely instead of lying via `status=200`.
 
 ## Development
 

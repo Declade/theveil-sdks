@@ -9,6 +9,7 @@ from theveil import (
     TheVeilConfigError,
     TheVeilError,
     TheVeilHttpError,
+    TheVeilResponseValidationError,
     TheVeilTimeoutError,
 )
 
@@ -34,6 +35,16 @@ class TestErrorHierarchy:
     def test_certificate_inherits_base(self) -> None:
         err = TheVeilCertificateError("x", reason="malformed")
         assert isinstance(err, TheVeilError)
+
+    def test_response_validation_inherits_base(self) -> None:
+        err = TheVeilResponseValidationError("x", body={})
+        assert isinstance(err, TheVeilError)
+
+    def test_response_validation_is_not_an_http_error(self) -> None:
+        # Catching TheVeilHttpError must NOT catch a response-validation
+        # failure — they are distinct surfaces (transport vs. body shape).
+        err = TheVeilResponseValidationError("x", body={})
+        assert not isinstance(err, TheVeilHttpError)
 
 
 class TestTheVeilHttpError:
@@ -86,6 +97,23 @@ class TestTheVeilTimeoutError:
         assert str(err) == "slow"
 
 
+class TestTheVeilResponseValidationError:
+    def test_body_accessible(self) -> None:
+        err = TheVeilResponseValidationError(
+            "bad shape", body={"unexpected": True}
+        )
+        assert err.body == {"unexpected": True}
+
+    def test_cause_preserved(self) -> None:
+        inner = ValueError("not json")
+        err = TheVeilResponseValidationError("bad", body="raw text", cause=inner)
+        assert err.__cause__ is inner
+
+    def test_body_may_be_raw_text(self) -> None:
+        err = TheVeilResponseValidationError("bad", body="not json at all")
+        assert err.body == "not json at all"
+
+
 class TestCatchability:
     """Callers can ``except TheVeilError`` to catch all SDK-raised errors."""
 
@@ -95,6 +123,7 @@ class TestCatchability:
             TheVeilHttpError("x", status=500, body=None),
             TheVeilTimeoutError("x"),
             TheVeilCertificateError("x", reason="malformed"),
+            TheVeilResponseValidationError("x", body={}),
         ):
             try:
                 raise exc

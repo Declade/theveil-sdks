@@ -22,6 +22,7 @@ from theveil import (
     TheVeilConfig,
     TheVeilConfigError,
     TheVeilHttpError,
+    TheVeilResponseValidationError,
     TheVeilTimeoutError,
 )
 
@@ -197,13 +198,47 @@ class TestValidation:
 
 class TestMalformed200:
     @respx.mock
-    def test_missing_required_sync_fields_raises_http_error(self) -> None:
+    def test_missing_required_sync_fields_raises_response_validation_error(
+        self,
+    ) -> None:
         # A 200 with a body that's not processing, not a valid sync response
         # either (missing model_used, latency_ms) — wraps as
-        # TheVeilHttpError(200).
+        # TheVeilResponseValidationError (NOT TheVeilHttpError, which is
+        # reserved for transport-level non-2xx).
         respx.post(MESSAGES_URL).respond(
             200, json={"status": "JOB_STATUS_COMPLETED"}
         )
+        with pytest.raises(TheVeilResponseValidationError) as exc_info:
+            _client().messages(_params())
+        err = exc_info.value
+        assert err.body == {"status": "JOB_STATUS_COMPLETED"}
+        assert not isinstance(err, TheVeilHttpError)
+
+    @respx.mock
+    def test_missing_required_async_fields_raises_response_validation_error(
+        self,
+    ) -> None:
+        # body["status"] == "processing" triggers the async branch; if its
+        # required fields (job_id, status_url, request_id) are missing,
+        # Pydantic rejects and the client wraps as
+        # TheVeilResponseValidationError.
+        respx.post(MESSAGES_URL).respond(
+            202, json={"status": "processing"}
+        )
+        with pytest.raises(TheVeilResponseValidationError) as exc_info:
+            _client().messages(_params())
+        err = exc_info.value
+        assert err.body == {"status": "processing"}
+        assert not isinstance(err, TheVeilHttpError)
+
+    @respx.mock
+    def test_non_2xx_still_raises_http_error(self) -> None:
+        # Invariant: non-2xx keeps TheVeilHttpError. ResponseValidationError
+        # must NEVER fire for transport-level failure.
+        respx.post(MESSAGES_URL).respond(
+            500, json={"error": {"code": "upstream_error"}}
+        )
         with pytest.raises(TheVeilHttpError) as exc_info:
             _client().messages(_params())
-        assert exc_info.value.status == 200
+        assert exc_info.value.status == 500
+        assert not isinstance(exc_info.value, TheVeilResponseValidationError)

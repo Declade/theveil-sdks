@@ -20,6 +20,7 @@ from theveil.errors import (
     TheVeilConfigError,
     TheVeilError,
     TheVeilHttpError,
+    TheVeilResponseValidationError,
     TheVeilTimeoutError,
 )
 from theveil.types import (
@@ -264,9 +265,12 @@ class TheVeil:
         try:
             return VeilCertificate.model_validate(body)
         except ValidationError as exc:
-            raise TheVeilHttpError(
+            # 2xx-but-wrong-shape is NOT an HTTP error — surface via the
+            # dedicated response-validation class so callers can branch on
+            # "transport failed (TheVeilHttpError)" vs "body doesn't look
+            # like a VeilCertificate (TheVeilResponseValidationError)".
+            raise TheVeilResponseValidationError(
                 "Response body failed to deserialize as VeilCertificate",
-                status=status,
                 body=body,
                 cause=exc,
             ) from exc
@@ -393,18 +397,20 @@ def _parse_proxy_response(status: int, body: Any) -> ProxyResponse:
         try:
             return ProxyAcceptedResponse.model_validate(body)
         except ValidationError as exc:
-            raise TheVeilHttpError(
+            # 2xx-but-wrong-shape — dedicated validation error, not HTTP error.
+            # The ``status`` kwarg here is the real transport status; we drop
+            # it because TheVeilResponseValidationError does not model it
+            # (status was always 2xx in this branch).
+            raise TheVeilResponseValidationError(
                 "Response body failed to deserialize as ProxyAcceptedResponse",
-                status=status,
                 body=body,
                 cause=exc,
             ) from exc
     try:
         return ProxySyncResponse.model_validate(body)
     except ValidationError as exc:
-        raise TheVeilHttpError(
+        raise TheVeilResponseValidationError(
             "Response body failed to deserialize as ProxySyncResponse",
-            status=status,
             body=body,
             cause=exc,
         ) from exc

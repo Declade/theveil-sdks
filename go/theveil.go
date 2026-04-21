@@ -121,9 +121,12 @@ func (c *Client) Messages(ctx context.Context, req MessagesRequest, opts ...Call
 		if s, _ := m["status"].(string); s == "processing" {
 			var async ProxyAcceptedResponse
 			if decodeErr := decodeInto(respBody, &async); decodeErr != nil {
-				return nil, &HTTPError{
-					Status:  status,
-					Body:    respBody,
+				// 2xx-but-wrong-shape is NOT an HTTP error — dedicated
+				// validation type so callers can branch on "transport
+				// failed (*HTTPError)" vs "body doesn't look like a
+				// ProxyAcceptedResponse (*ResponseValidationError)".
+				return nil, &ResponseValidationError{
+					Body:    rawBodyBytes(respBody),
 					Message: "response failed to deserialize as ProxyAcceptedResponse: " + decodeErr.Error(),
 					Err:     decodeErr,
 				}
@@ -133,13 +136,13 @@ func (c *Client) Messages(ctx context.Context, req MessagesRequest, opts ...Call
 	}
 	var sync ProxySyncResponse
 	if decodeErr := decodeInto(respBody, &sync); decodeErr != nil {
-		return nil, &HTTPError{
-			Status:  status,
-			Body:    respBody,
+		return nil, &ResponseValidationError{
+			Body:    rawBodyBytes(respBody),
 			Message: "response failed to deserialize as ProxySyncResponse: " + decodeErr.Error(),
 			Err:     decodeErr,
 		}
 	}
+	_ = status // non-2xx was already handled inside c.do via *HTTPError
 	return &sync, nil
 }
 
@@ -179,14 +182,37 @@ func (c *Client) GetCertificate(ctx context.Context, requestID string, opts ...C
 
 	var cert VeilCertificate
 	if decodeErr := decodeInto(respBody, &cert); decodeErr != nil {
-		return nil, &HTTPError{
-			Status:  status,
-			Body:    respBody,
+		// 2xx-but-wrong-shape: dedicated validation error, not HTTP error.
+		// See ResponseValidationError docstring in errors.go for rationale.
+		return nil, &ResponseValidationError{
+			Body:    rawBodyBytes(respBody),
 			Message: "response body failed to deserialize as VeilCertificate: " + decodeErr.Error(),
 			Err:     decodeErr,
 		}
 	}
+	_ = status // non-2xx was already handled inside c.do via *HTTPError
 	return &cert, nil
+}
+
+// rawBodyBytes re-serializes the transport-parsed body back into raw bytes
+// for *ResponseValidationError.Body. If the transport returned a string
+// (non-JSON 2xx path), emit the UTF-8 bytes directly; otherwise marshal
+// the parsed JSON back to bytes.
+func rawBodyBytes(body any) []byte {
+	switch v := body.(type) {
+	case nil:
+		return nil
+	case string:
+		return []byte(v)
+	case []byte:
+		return v
+	default:
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil
+		}
+		return b
+	}
 }
 
 // VerifyCertificate is the method form of the package-level

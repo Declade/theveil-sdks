@@ -158,6 +158,12 @@ All SDK errors satisfy the `theveil.Error` interface. Concrete types:
 - `*ConfigError` — caller input invalid.
 - `*HTTPError` — gateway returned non-2xx (or 202 from `GetCertificate`);
   fields `Status int`, `Body any`, `Message string`, `Err error` (wrapped).
+- `*ResponseValidationError` — gateway returned 2xx but the body couldn't
+  be deserialized into the declared response type (typically a gateway
+  bug or version skew); fields `Body []byte`, `Message string`,
+  `Err error` (wrapped decode error). **Distinct from `*HTTPError`** so
+  callers can branch cleanly on "transport failed" vs "body shape
+  wrong."
 - `*TimeoutError` — request exceeded timeout; wraps `context.DeadlineExceeded`.
 - `*NetworkError` — connection failures, caller-cancel, transport errors;
   wraps the underlying error (use `errors.Is(err, context.Canceled)` to
@@ -181,16 +187,25 @@ Intentional idiomatic divergences from the other two SDKs:
 - **Cancellation via `context.Context`**, not `AbortSignal` / cancel
   tokens. Pass a `ctx` with deadline / cancel; caller-cancel produces
   a `*NetworkError` wrapping `context.Canceled`.
-- **Error taxonomy flatter** than TS: 5 concrete error types, all
-  satisfying the `theveil.Error` interface. No deep inheritance chain.
+- **Error taxonomy** satisfies the `theveil.Error` interface. No deep
+  inheritance chain.
 - **Functional options** (`WithBaseURL`, `WithTimeout`, `WithHTTPClient`,
-  `WithCallTimeout`, `WithCallHeader`) for constructor + per-call config.
+  `WithCallTimeout`, `WithCallHeader`, `WithMaxResponseBytes`) for
+  constructor + per-call config.
 - **PascalCase exports** per Go convention: `GetCertificate`, `Messages`,
   `VerifyCertificate`.
-- **Thin transport on 200**: Go's `json.Unmarshal` zero-values missing
-  fields, so a malformed 200 body produces a `*VeilCertificate` with
-  empty required fields. `VerifyCertificate` rejects it with
-  `ReasonMalformed` downstream.
+- **Malformed 2xx body**: TS passes through as raw bytes typed as
+  `VeilCertificate` (thin transport); Go follows Go-SDK precedent
+  (aws-sdk-go-v2's `*smithy.DeserializationError`,
+  kubernetes/client-go's runtime-decode errors) and returns
+  `(nil, *ResponseValidationError)` on any decode failure. `*HTTPError`
+  is reserved for non-2xx transport failures — an HTTP 200 is not an
+  HTTP error. Note: a 2xx JSON object missing required fields still
+  returns `(*VeilCertificate, nil)` with zero-valued fields, because
+  Go's `json.Unmarshal` is permissive on field presence (this matches
+  TS thin-transport behaviour for the value-present path). Downstream
+  `VerifyCertificate` rejects such a zero-valued struct with
+  `ReasonMalformed`.
 
 ## Release
 

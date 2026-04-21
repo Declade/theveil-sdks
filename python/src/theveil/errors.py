@@ -69,6 +69,43 @@ class TheVeilTimeoutError(TheVeilError):
     """
 
 
+class TheVeilResponseValidationError(TheVeilError):
+    """Raised when a 2xx gateway response deserializes into a shape that
+    doesn't fit the SDK's declared response type (either JSON that fails
+    Pydantic validation, or a non-JSON body on a 2xx status).
+
+    Distinct from :class:`TheVeilHttpError`, which is reserved for gateway
+    non-2xx responses and the 202 pending wrapper on ``get_certificate``.
+    A response-validation error means "the gateway replied with apparent
+    success, but the body we got doesn't look like the declared type" —
+    typically a gateway bug or version skew, not a transport failure.
+
+    Attributes:
+        body: Raw deserialized body — a dict / list / primitive when the
+            response parsed as JSON, or the raw text otherwise.
+
+    The ``__cause__`` attribute preserves the underlying Pydantic
+    :class:`pydantic.ValidationError` or :class:`ValueError` so callers
+    can inspect field-level detail if they need to.
+
+    Matches the shape of ``openai.APIResponseValidationError`` and
+    ``anthropic.APIResponseValidationError`` — the nearest-sibling typed
+    Python SDK precedent.
+    """
+
+    body: Any
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        body: Any,
+        cause: BaseException | None = None,
+    ) -> None:
+        super().__init__(message, cause=cause)
+        self.body = body
+
+
 class TheVeilCertificateError(TheVeilError):
     """Raised by verify_certificate when verification fails.
 

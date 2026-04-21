@@ -74,6 +74,32 @@ func TestAllErrorsSatisfyErrorInterface(t *testing.T) {
 	var _ Error = &TimeoutError{}
 	var _ Error = &NetworkError{}
 	var _ Error = &CertificateError{}
+	var _ Error = &ResponseValidationError{}
+}
+
+func TestResponseValidationError_BodyAndUnwrap(t *testing.T) {
+	inner := errors.New("json decode failed")
+	err := &ResponseValidationError{
+		Body:    []byte(`{"not": "a cert"}`),
+		Message: "response body failed to deserialize",
+		Err:     inner,
+	}
+	if string(err.Body) != `{"not": "a cert"}` {
+		t.Errorf("body preservation failed")
+	}
+	if !errors.Is(err, inner) {
+		t.Errorf("errors.Is should unwrap to inner")
+	}
+}
+
+func TestResponseValidationError_IsNotHTTPError(t *testing.T) {
+	// Core invariant: a response-validation failure is NOT an HTTP error.
+	// Callers filtering on *HTTPError must NOT accidentally catch it.
+	err := error(&ResponseValidationError{Message: "bad shape"})
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		t.Errorf("must not satisfy *HTTPError")
+	}
 }
 
 func TestErrorsAs_HTTPError(t *testing.T) {

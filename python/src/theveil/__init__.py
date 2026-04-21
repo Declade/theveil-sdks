@@ -4,6 +4,7 @@ from theveil.errors import (
     TheVeilConfigError,
     TheVeilError,
     TheVeilHttpError,
+    TheVeilResponseValidationError,
     TheVeilTimeoutError,
 )
 from theveil.types import (
@@ -41,6 +42,7 @@ __all__ = [
     "TheVeilConfigError",
     "TheVeilError",
     "TheVeilHttpError",
+    "TheVeilResponseValidationError",
     "TheVeilTimeoutError",
     "VeilAnchorStatusInfo",
     "VeilCertificate",

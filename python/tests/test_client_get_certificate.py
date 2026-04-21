@@ -10,9 +10,11 @@ divergences:
 * Malformed 200 body: TS returns raw text typed as ``VeilCertificate``
   (thin-transport, passes through). Python calls
   ``VeilCertificate.model_validate(body)`` at deserialize time and
-  wraps ``ValidationError`` as ``TheVeilHttpError(status=200)`` so the
-  caller still gets a typed SDK error. Both languages surface a typed
-  error to the caller; Python fails at fetch, TS at ``verify_certificate``.
+  wraps ``ValidationError`` as :class:`TheVeilResponseValidationError`
+  — a dedicated error class distinct from :class:`TheVeilHttpError`
+  (which is reserved for gateway non-2xx). Both languages surface a
+  typed error to the caller; Python fails at fetch, TS at
+  ``verify_certificate``.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from theveil import (
     TheVeilConfigError,
     TheVeilError,
     TheVeilHttpError,
+    TheVeilResponseValidationError,
     TheVeilTimeoutError,
 )
 
@@ -210,34 +213,64 @@ class TestPathEncoding:
 
 class TestMalformed200:
     """Observed behaviour: non-JSON / wrong-shape 200 surfaces as
-    TheVeilHttpError(status=200, body=<raw>). Intentional divergence from
-    TS thin-transport pass-through — see module docstring."""
+    :class:`TheVeilResponseValidationError` — distinct from
+    :class:`TheVeilHttpError` so callers can branch cleanly on
+    "transport failed" vs "body doesn't fit declared type".
+    """
 
     @respx.mock
-    def test_non_json_200_body_raises_http_error(self) -> None:
+    def test_non_json_200_body_raises_response_validation_error(self) -> None:
         respx.get(f"{BASE}{CERT_PATH_PREFIX}req_malformed_0001").respond(
             200, text="not json at all", headers={"content-type": "text/plain"}
         )
         client = _client()
-        with pytest.raises(TheVeilHttpError) as exc_info:
+        with pytest.raises(TheVeilResponseValidationError) as exc_info:
             client.get_certificate("req_malformed_0001")
         err = exc_info.value
-        assert err.status == 200
+        # The body is the raw text since it failed JSON parsing upstream.
         assert err.body == "not json at all"
+        # And NOT an HTTP error — that would lie about the transport layer.
+        assert not isinstance(err, TheVeilHttpError)
 
     @respx.mock
-    def test_missing_required_fields_200_raises_http_error(self) -> None:
+    def test_missing_required_fields_200_raises_response_validation_error(
+        self,
+    ) -> None:
         # A 200 with JSON but missing `certificate_id` — Pydantic raises
-        # ValidationError; the client wraps as TheVeilHttpError.
+        # ValidationError; the client wraps as TheVeilResponseValidationError
+        # and preserves the Pydantic error as __cause__ for field-level
+        # inspection by callers.
+        from pydantic import ValidationError
+
         respx.get(f"{BASE}{CERT_PATH_PREFIX}req_partial_0001").respond(
             200, json={"not_a_cert": True}
         )
         client = _client()
-        with pytest.raises(TheVeilHttpError) as exc_info:
+        with pytest.raises(TheVeilResponseValidationError) as exc_info:
             client.get_certificate("req_partial_0001")
         err = exc_info.value
-        assert err.status == 200
         assert isinstance(err.body, dict)
+        assert err.body == {"not_a_cert": True}
+        # Callers can introspect the Pydantic validation details.
+        assert isinstance(err.__cause__, ValidationError)
+        # Still satisfies the base SDK error class — callers doing
+        # ``except TheVeilError`` still catch it.
+        assert isinstance(err, TheVeilError)
+
+    @respx.mock
+    def test_non_2xx_still_raises_http_error_not_response_validation_error(
+        self,
+    ) -> None:
+        # Invariant: non-2xx keeps TheVeilHttpError. The new class must NEVER
+        # fire for a transport-level failure.
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_gone").respond(
+            404, json={"error": {"code": "veil_not_configured"}}
+        )
+        client = _client()
+        with pytest.raises(TheVeilHttpError) as exc_info:
+            client.get_certificate("req_gone")
+        assert exc_info.value.status == 404
+        assert not isinstance(exc_info.value, TheVeilResponseValidationError)
 
 
 class TestMaxResponseBytesEnforcement:

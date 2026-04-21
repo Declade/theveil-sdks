@@ -378,6 +378,10 @@ func TestGetCertificate_CallerHeadersMerged_SDKKeysWin(t *testing.T) {
 // -- Malformed 200 body -------------------------------------------------
 
 func TestGetCertificate_Malformed200_NonJSON(t *testing.T) {
+	// Non-JSON 2xx body fails decodeInto (json.Marshal + Unmarshal round
+	// trip chokes on a non-JSON string) and surfaces via the dedicated
+	// *ResponseValidationError — NOT *HTTPError, which is reserved for
+	// non-2xx transport failures.
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/plain")
 		_, _ = w.Write([]byte("not json at all"))
@@ -386,25 +390,66 @@ func TestGetCertificate_Malformed200_NonJSON(t *testing.T) {
 	defer server.Close()
 
 	_, err := c.GetCertificate(context.Background(), "req_malformed_0001")
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if string(vErr.Body) != "not json at all" {
+		t.Errorf("body = %q", string(vErr.Body))
+	}
+	// Invariant: must NOT also be an *HTTPError — semantic distinction.
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		t.Errorf("should not also be *HTTPError: %v", httpErr)
+	}
+	// Still satisfies the base Error interface so callers doing blanket
+	// theveil.Error type switches still catch it.
+	var base Error
+	if !errors.As(err, &base) {
+		t.Errorf("should satisfy theveil.Error interface")
+	}
+	// Underlying json error preserved via Unwrap.
+	if vErr.Err == nil {
+		t.Errorf("Err should wrap the underlying json error")
+	}
+}
+
+func TestGetCertificate_Non2xx_UsesHTTPErrorNotResponseValidation(t *testing.T) {
+	// Invariant: non-2xx MUST still raise *HTTPError, not
+	// *ResponseValidationError. The new class must never fire for
+	// transport-level failures.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte(`{"error": {"code": "veil_not_configured"}}`))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.GetCertificate(context.Background(), "req_missing")
 	var httpErr *HTTPError
 	if !errors.As(err, &httpErr) {
-		t.Fatalf("want HTTPError, got %T", err)
+		t.Fatalf("want *HTTPError, got %T", err)
 	}
-	if httpErr.Status != 200 {
+	if httpErr.Status != 404 {
 		t.Errorf("status = %d", httpErr.Status)
 	}
-	if s, ok := httpErr.Body.(string); !ok || s != "not json at all" {
-		t.Errorf("body = %v (%T)", httpErr.Body, httpErr.Body)
+	var vErr *ResponseValidationError
+	if errors.As(err, &vErr) {
+		t.Errorf("should not also be *ResponseValidationError")
 	}
 }
 
 func TestGetCertificate_Malformed200_MissingRequiredFields(t *testing.T) {
+	// Go's json.Unmarshal is permissive on missing fields (zero-values
+	// them) — so the decode itself succeeds on a valid JSON object that
+	// happens to lack required cert fields. This documents the current
+	// behaviour: no *ResponseValidationError fires here because the
+	// underlying json.Unmarshal didn't fail. The caller's subsequent
+	// VerifyCertificate call rejects the zero-valued result with
+	// ReasonMalformed, per the thin-transport contract.
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		// Body is JSON but wrong shape — GetCertificate's json.Unmarshal into
-		// *VeilCertificate succeeds (Go is permissive — missing required
-		// fields just zero-value the struct). That's the documented
-		// thin-transport behaviour: shape-validate at verify time, not fetch.
 		_, _ = w.Write([]byte(`{"not_a_cert": true}`))
 	}
 	c, server := newMockedClient(t, handler)

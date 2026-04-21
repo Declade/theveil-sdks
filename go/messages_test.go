@@ -233,9 +233,14 @@ func TestMessages_PerCallTimeoutOverrides(t *testing.T) {
 // -- Malformed 200 body -------------------------------------------------
 
 func TestMessages_Malformed200_BodyPassthrough(t *testing.T) {
-	// Go's JSON unmarshal is permissive: missing fields zero-value the struct.
-	// Thin-transport contract: fetch succeeds; downstream logic decides
-	// what to do with an incomplete ProxySyncResponse.
+	// Go's json.Unmarshal is permissive: missing fields zero-value the
+	// struct. Thin-transport contract: fetch succeeds; downstream logic
+	// decides what to do with an incomplete ProxySyncResponse.
+	//
+	// Note: no *ResponseValidationError fires here because the underlying
+	// json.Unmarshal did not fail — it just produced a mostly-empty
+	// struct. ResponseValidationError fires when Unmarshal *itself* errors
+	// (wrong JSON type, syntax error, etc.) — see TestMessages_Malformed200_NonJSON.
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		// Non-processing, non-COMPLETED body — missing model_used, latency_ms.
@@ -260,5 +265,80 @@ func TestMessages_Malformed200_BodyPassthrough(t *testing.T) {
 	}
 	if sync.LatencyMs != 0 {
 		t.Errorf("latency_ms should be zero")
+	}
+}
+
+func TestMessages_Malformed200_NonJSON_RaisesResponseValidation(t *testing.T) {
+	// A 200 with a non-JSON body triggers decodeInto failure → surfaces
+	// via the dedicated *ResponseValidationError (NOT *HTTPError, which
+	// is reserved for non-2xx transport failures).
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/plain")
+		_, _ = w.Write([]byte("not json at all"))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.Messages(context.Background(), basicMessagesRequest())
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if len(vErr.Body) == 0 {
+		t.Errorf("Body should be non-empty")
+	}
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		t.Errorf("must not also be *HTTPError")
+	}
+}
+
+func TestMessages_Malformed202_ProcessingWithWrongType_RaisesResponseValidation(t *testing.T) {
+	// Body.status == "processing" takes the async branch; if the body
+	// contents are the wrong JSON type for ProxyAcceptedResponse (e.g.
+	// job_id as an int instead of a string), decodeInto fails and the
+	// dedicated *ResponseValidationError fires.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		// job_id typed as a number — can't unmarshal into string.
+		_, _ = w.Write([]byte(`{"status":"processing","job_id":42,"request_id":"r","status_url":"u"}`))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.Messages(context.Background(), basicMessagesRequest())
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T", err)
+	}
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		t.Errorf("must not also be *HTTPError")
+	}
+}
+
+func TestMessages_Non2xx_UsesHTTPErrorNotResponseValidation(t *testing.T) {
+	// Invariant: non-2xx MUST raise *HTTPError. *ResponseValidationError
+	// must never fire for transport-level failure.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(`{"error": {"code": "upstream_error"}}`))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.Messages(context.Background(), basicMessagesRequest())
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("want *HTTPError, got %T", err)
+	}
+	if httpErr.Status != 500 {
+		t.Errorf("status = %d", httpErr.Status)
+	}
+	var vErr *ResponseValidationError
+	if errors.As(err, &vErr) {
+		t.Errorf("must not also be *ResponseValidationError")
 	}
 }

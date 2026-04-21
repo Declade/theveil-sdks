@@ -103,6 +103,35 @@ const (
 	ReasonInvalidSignature            VerifyCertificateFailureReason = "invalid_signature"
 )
 
+// ResponseValidationError is returned when a 2xx gateway response fails
+// to deserialize into the SDK's declared response type (either
+// json.Unmarshal fails, or the resulting struct has missing required
+// fields surfaced via a follow-up check).
+//
+// Distinct from *HTTPError, which is reserved for non-2xx gateway
+// responses and the 202 pending wrapper on GetCertificate. A
+// ResponseValidationError means "the gateway replied with apparent
+// success, but the body we got doesn't fit the declared type" —
+// typically a gateway bug or version skew, not a transport failure.
+//
+// Matches aws-sdk-go-v2's *smithy.DeserializationError and
+// kubernetes/client-go's runtime-decode error shape: (nil, err) on any
+// decode failure, with the underlying error wrapped via Unwrap() for
+// errors.Is / errors.As.
+type ResponseValidationError struct {
+	Body    []byte
+	Message string
+	Err     error
+}
+
+func (e *ResponseValidationError) Error() string {
+	return "theveil: " + e.Message
+}
+
+func (e *ResponseValidationError) Unwrap() error { return e.Err }
+
+func (e *ResponseValidationError) theveilError() {}
+
 // CertificateError is returned by VerifyCertificate when verification
 // fails. Reason names the specific failure mode. CertificateID is lifted
 // from cert.CertificateID for error-context logging when available.
