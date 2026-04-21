@@ -288,7 +288,7 @@ func TestGetCertificate_RejectsEmptyRequestID(t *testing.T) {
 
 // -- MaxResponseBytes enforcement ---------------------------------------
 
-func TestGetCertificate_ResponseLargerThanCap_RaisesHTTPError(t *testing.T) {
+func TestGetCertificate_2xxOverCap_RaisesResponseValidationError(t *testing.T) {
 	big := strings.Repeat("x", 1024)
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/plain")
@@ -305,12 +305,47 @@ func TestGetCertificate_ResponseLargerThanCap_RaisesHTTPError(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = c.GetCertificate(context.Background(), "req_big")
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if !strings.Contains(vErr.Message, "MaxResponseBytes") {
+		t.Errorf("message should mention cap: %q", vErr.Message)
+	}
+	// Invariant: must NOT also be *HTTPError on a 2xx over-cap.
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		t.Errorf("must not also be *HTTPError on a 2xx over-cap")
+	}
+}
+
+func TestGetCertificate_Non2xxOverCap_RaisesHTTPError(t *testing.T) {
+	// Cap-overflow on a non-2xx keeps *HTTPError — the transport status
+	// is the dominant signal. Gateway that returns 502 with an oversized
+	// body should surface as 502, not wrong-shape.
+	big := strings.Repeat("x", 1024)
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/plain")
+		w.WriteHeader(502)
+		_, _ = w.Write([]byte(big))
+	}
+	server := httptest.NewServer(http.HandlerFunc(handler))
+	defer server.Close()
+	c, err := New(
+		validAPIKey,
+		WithBaseURL(server.URL),
+		WithMaxResponseBytes(256),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.GetCertificate(context.Background(), "req_big_err")
 	var httpErr *HTTPError
 	if !errors.As(err, &httpErr) {
-		t.Fatalf("want HTTPError, got %T (%v)", err, err)
+		t.Fatalf("want *HTTPError, got %T (%v)", err, err)
 	}
-	if !strings.Contains(httpErr.Message, "MaxResponseBytes") {
-		t.Errorf("message should mention cap: %q", httpErr.Message)
+	if httpErr.Status != 502 {
+		t.Errorf("status = %d", httpErr.Status)
 	}
 }
 

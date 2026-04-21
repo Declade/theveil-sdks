@@ -200,11 +200,14 @@ Intentional idiomatic divergences from the other two SDKs:
   kubernetes/client-go's runtime-decode errors) and returns
   `(nil, *ResponseValidationError)` on any decode failure. `*HTTPError`
   is reserved for non-2xx transport failures — an HTTP 200 is not an
-  HTTP error. Note: a 2xx JSON object missing required fields still
-  returns `(*VeilCertificate, nil)` with zero-valued fields, because
-  Go's `json.Unmarshal` is permissive on field presence (this matches
-  TS thin-transport behaviour for the value-present path). Downstream
-  `VerifyCertificate` rejects such a zero-valued struct with
+  HTTP error. The same applies uniformly across `GetCertificate`,
+  `Messages`, and any other 2xx-decode path.
+  Note: a 2xx JSON object missing required fields still
+  returns `(*VeilCertificate, nil)` (or `(*ProxySyncResponse, nil)` for
+  `Messages`) with zero-valued fields, because Go's `json.Unmarshal` is
+  permissive on field presence — the decode itself does not fail. This
+  matches TS thin-transport behaviour for the value-present path.
+  Downstream `VerifyCertificate` rejects such a zero-valued struct with
   `ReasonMalformed`.
 
 ## Release

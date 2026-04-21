@@ -275,16 +275,39 @@ class TestMalformed200:
 
 class TestMaxResponseBytesEnforcement:
     @respx.mock
-    def test_response_larger_than_cap_raises_http_error(self) -> None:
-        # Deliberately ship 1 KB when the cap is 256 bytes.
+    def test_2xx_over_cap_raises_response_validation_error(self) -> None:
+        # Deliberately ship 1 KB when the cap is 256 bytes. On a 2xx status
+        # the over-cap path raises TheVeilResponseValidationError — the
+        # body was not consumable, which is semantically the same class of
+        # 2xx-body-unusable failure as a wrong-shape body. *HTTPError*
+        # stays reserved for non-2xx transport failures.
         respx.get(f"{BASE}{CERT_PATH_PREFIX}req_big").respond(
             200, text="x" * 1024, headers={"content-type": "text/plain"}
         )
         client = TheVeil(
             TheVeilConfig(api_key=VALID_KEY, max_response_bytes=256)
         )
-        with pytest.raises(TheVeilHttpError, match="max_response_bytes"):
+        with pytest.raises(
+            TheVeilResponseValidationError, match="max_response_bytes"
+        ) as exc_info:
             client.get_certificate("req_big")
+        # Invariant: must NOT also be TheVeilHttpError.
+        assert not isinstance(exc_info.value, TheVeilHttpError)
+
+    @respx.mock
+    def test_non_2xx_over_cap_still_raises_http_error(self) -> None:
+        # Cap-overflow on a non-2xx keeps *HTTPError* — the caller saw a
+        # transport error AND an oversized body; the transport error is
+        # the dominant signal.
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_big_err").respond(
+            502, text="x" * 1024, headers={"content-type": "text/plain"}
+        )
+        client = TheVeil(
+            TheVeilConfig(api_key=VALID_KEY, max_response_bytes=256)
+        )
+        with pytest.raises(TheVeilHttpError, match="max_response_bytes") as exc_info:
+            client.get_certificate("req_big_err")
+        assert exc_info.value.status == 502
 
     @respx.mock
     def test_response_at_cap_is_accepted(

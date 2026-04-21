@@ -346,6 +346,18 @@ class TheVeil:
                             break
                         chunks.append(chunk)
                     if over_cap:
+                        # Cap-overflow on a 2xx means "gateway replied with
+                        # apparent success but the body we received is not
+                        # consumable" — the same rationale as shape-validation
+                        # failure. Surface via ResponseValidationError so the
+                        # "HTTPError never fires on 2xx" invariant holds
+                        # uniformly across every 2xx-body-unusable path.
+                        if 200 <= status_code < 300:
+                            raise TheVeilResponseValidationError(
+                                "response body exceeded max_response_bytes cap of "
+                                f"{self.max_response_bytes}",
+                                body=None,
+                            )
                         raise TheVeilHttpError(
                             "response body exceeded max_response_bytes cap of "
                             f"{self.max_response_bytes}",
@@ -387,10 +399,12 @@ class TheVeil:
 def _parse_proxy_response(status: int, body: Any) -> ProxyResponse:
     """Discriminate ``messages()`` body into the sync / async union.
 
-    Mirrors the TS SDK's behaviour: ``status == "processing"`` → async;
-    anything else → sync. On malformed bodies, wraps the Pydantic
-    ValidationError in :class:`TheVeilHttpError` so callers see a typed
-    SDK error rather than a raw Pydantic exception.
+    Mirrors the TS SDK's behaviour: ``body["status"] == "processing"`` →
+    async; anything else → sync. On malformed bodies, wraps the Pydantic
+    ``ValidationError`` in :class:`TheVeilResponseValidationError` — the
+    dedicated class for 2xx-wrong-shape responses. The ``status`` kwarg
+    is kept for future use (e.g. a follow-up 201/204 semantic branch);
+    the current 2xx paths share the same discrimination.
     """
 
     if isinstance(body, dict) and body.get("status") == "processing":

@@ -308,6 +308,18 @@ func (c *Client) do(
 		}
 	}
 	if int64(len(respBytes)) > c.maxResponseBytes {
+		// Cap-overflow on a 2xx means "gateway replied with apparent success
+		// but the body we received is not consumable" — route via
+		// *ResponseValidationError so the "*HTTPError never fires on 2xx"
+		// invariant holds uniformly. Non-2xx over-cap still falls through
+		// to *HTTPError below because the caller genuinely saw a transport
+		// error AND an oversized body.
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return resp.StatusCode, nil, &ResponseValidationError{
+				Body:    nil,
+				Message: fmt.Sprintf("response body exceeded MaxResponseBytes cap of %d", c.maxResponseBytes),
+			}
+		}
 		return resp.StatusCode, nil, &HTTPError{
 			Status:  resp.StatusCode,
 			Body:    nil,
