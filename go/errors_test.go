@@ -120,6 +120,53 @@ func TestRawBodyBytes_EmptyMapReturnsEmptyJSONObject(t *testing.T) {
 	}
 }
 
+// String input → JSON-quoted literal. Load-bearing regression tripwire:
+// an earlier version of rawBodyBytes returned the raw UTF-8 bytes for
+// strings via a type-switch special case. The current implementation
+// always json.Marshals; this test locks that decision self-contained
+// (no handler-level integration needed).
+func TestRawBodyBytes_StringReturnsJSONQuotedLiteral(t *testing.T) {
+	got := rawBodyBytes("plain text")
+	want := []byte(`"plain text"`)
+	if string(got) != string(want) {
+		t.Errorf("rawBodyBytes(%q) = %q, want %q", "plain text", string(got), string(want))
+	}
+}
+
+func TestRawBodyBytes_EmptyStringReturnsQuotedEmpty(t *testing.T) {
+	got := rawBodyBytes("")
+	want := []byte(`""`)
+	if string(got) != string(want) {
+		t.Errorf("rawBodyBytes(\"\") = %q, want %q", string(got), string(want))
+	}
+}
+
+// Go's encoding/json marshals []byte as a base64-encoded JSON string —
+// not raw bytes and not a JSON array. "raw" → base64("raw") → "cmF3" →
+// quoted `"cmF3"`. This test locks that behaviour so a future refactor
+// that reintroduces a []byte special case doesn't silently alter what
+// ends up on *ResponseValidationError.Body.
+func TestRawBodyBytes_BytesReturnBase64JSONString(t *testing.T) {
+	got := rawBodyBytes([]byte("raw"))
+	want := []byte(`"cmF3"`)
+	if string(got) != string(want) {
+		t.Errorf("rawBodyBytes([]byte(%q)) = %q, want %q", "raw", string(got), string(want))
+	}
+}
+
+// Nested maps must round-trip with sorted keys at every level (Go
+// encoding/json default since 1.12). This is the same invariant
+// internal/verify.CanonicalJSON relies on for byte-equivalence with the
+// TS and Python canonical ports; locking it in errors_test gives us a
+// second tripwire independent of the verify pipeline.
+func TestRawBodyBytes_NestedMapRoundTrips(t *testing.T) {
+	got := rawBodyBytes(map[string]any{"a": map[string]any{"b": "c"}})
+	want := []byte(`{"a":{"b":"c"}}`)
+	if string(got) != string(want) {
+		t.Errorf("rawBodyBytes(nested) = %q, want %q", string(got), string(want))
+	}
+}
+
 func TestErrorsAs_HTTPError(t *testing.T) {
 	err := error(&HTTPError{Status: 401, Message: "nope"})
 	var httpErr *HTTPError
