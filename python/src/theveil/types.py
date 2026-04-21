@@ -63,7 +63,11 @@ class TheVeilConfig:
             non-2xx status (the transport status is the dominant signal).
             The prefix of the body read before the cap was hit is
             preserved on the error's ``body`` attribute so callers can
-            diagnose misbehaving gateways. Defaults to 10 MiB
+            diagnose misbehaving gateways. Note: the prefix is UTF-8-
+            decoded with ``errors='replace'``; when the cap slices into a
+            multi-byte UTF-8 sequence, the truncated body may contain a
+            Unicode replacement character (``\\ufffd``). Callers inspecting
+            raw body text should account for this. Defaults to 10 MiB
             (10 * 1024 * 1024). Pro / enterprise callers expecting larger
             bodies should raise the cap explicitly.
     """
@@ -176,7 +180,11 @@ class ProxySyncResponse(BaseModel):
 
     status: ProxyJobStatus
     model_used: str
-    latency_ms: int
+    # Default 0 aligns with the Go SDK's lenient ``validateProxySyncResponse``
+    # — the gateway may legitimately emit 0 on sub-ms paths, and a gateway
+    # that omits the field entirely should surface as a zero-valued field
+    # rather than a shape-validation failure.
+    latency_ms: int = 0
     result: Any | None = None
     dlp_redacted: bool | None = None
     relinked: bool | None = None

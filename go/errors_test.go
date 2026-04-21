@@ -102,6 +102,24 @@ func TestResponseValidationError_IsNotHTTPError(t *testing.T) {
 	}
 }
 
+// rawBodyBytes simplification regression tests — ToB-recommended. Lock
+// the always-json.Marshal behaviour so a future refactor can't regress
+// to type-switch special-casing.
+
+func TestRawBodyBytes_NilReturnsNil(t *testing.T) {
+	if got := rawBodyBytes(nil); got != nil {
+		t.Errorf("rawBodyBytes(nil) = %v, want nil", got)
+	}
+}
+
+func TestRawBodyBytes_EmptyMapReturnsEmptyJSONObject(t *testing.T) {
+	got := rawBodyBytes(map[string]any{})
+	want := []byte("{}")
+	if string(got) != string(want) {
+		t.Errorf("rawBodyBytes(map[string]any{}) = %q, want %q", string(got), string(want))
+	}
+}
+
 func TestErrorsAs_HTTPError(t *testing.T) {
 	err := error(&HTTPError{Status: 401, Message: "nope"})
 	var httpErr *HTTPError

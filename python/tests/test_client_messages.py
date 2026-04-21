@@ -196,6 +196,40 @@ class TestValidation:
         assert isinstance(result, ProxySyncResponse)
 
 
+class TestLatencyMsLeniency:
+    """DRIFT-001 alignment: Python now matches Go's lenient `latency_ms`
+    treatment. A gateway that omits the field, emits 0 on sub-ms paths,
+    or explicitly sends 0 must return a valid ProxySyncResponse — not
+    raise TheVeilResponseValidationError.
+    """
+
+    @respx.mock
+    def test_omitted_latency_ms_parses_with_zero_default(self) -> None:
+        # latency_ms absent from the body entirely; Pydantic applies the
+        # field default of 0 rather than rejecting.
+        body: dict[str, Any] = {
+            "status": "JOB_STATUS_COMPLETED",
+            "model_used": "claude-opus-4-7",
+            # no latency_ms
+        }
+        respx.post(MESSAGES_URL).respond(200, json=body)
+        resp = _client().messages(_params())
+        assert isinstance(resp, ProxySyncResponse)
+        assert resp.latency_ms == 0
+
+    @respx.mock
+    def test_explicit_zero_latency_ms_parses(self) -> None:
+        body: dict[str, Any] = {
+            "status": "JOB_STATUS_COMPLETED",
+            "model_used": "claude-opus-4-7",
+            "latency_ms": 0,
+        }
+        respx.post(MESSAGES_URL).respond(200, json=body)
+        resp = _client().messages(_params())
+        assert isinstance(resp, ProxySyncResponse)
+        assert resp.latency_ms == 0
+
+
 class TestMalformed200:
     @respx.mock
     def test_missing_required_sync_fields_raises_response_validation_error(

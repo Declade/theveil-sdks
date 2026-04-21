@@ -232,6 +232,25 @@ func (c *Client) GetCertificate(ctx context.Context, requestID string, opts ...C
 // opaque / tier-gated fields (attestation, anchor_status, claims[i]
 // internals) are not policed here; downstream VerifyCertificate
 // rejects fuller invariants (request_id match, verdict enum, etc.).
+//
+// Asymmetry note (intentional — do not "align" without reopening the
+// locked minimal-required-field-set decision):
+//   - This validator enforces the 5 fields the SDK's own signature-
+//     verification pipeline needs: certificate_id, request_id,
+//     witness_signature, witness_key_id, issued_at. Any zero means
+//     VerifyCertificate cannot proceed anyway.
+//   - The TypeScript SDK's parseCertificate
+//     (ts/src/verify-certificate/parse.ts) is stricter — it also rejects
+//     missing protocol_version, claims (as an array), and verification
+//     (as an object). The TS SDK does this because TS has no equivalent
+//     of Go's downstream VerifyCertificate-gated protocol_version check
+//     and because its DIY parser has no Pydantic-like framework to lean
+//     on.
+//   - Future maintainers: if you find yourself tempted to widen this Go
+//     validator to match TS, re-open the "minimal required-field set"
+//     locked decision first. Widening means callers who were getting a
+//     silently-zero-valued struct start getting ResponseValidationError
+//     — behaviour change the locked decision deliberately avoided.
 func validateVeilCertificate(c *VeilCertificate) error {
 	if c.CertificateID == "" {
 		return fmt.Errorf("VeilCertificate.certificate_id is empty")
@@ -266,13 +285,12 @@ func validateProxySyncResponse(s *ProxySyncResponse) error {
 }
 
 // validateProxyAcceptedResponse enforces the minimum field set for an
-// async (202) processing receipt — Status must be "processing" (which
-// the caller already gated on before construction), JobID + StatusURL
-// are both needed for the caller to poll.
+// async (202) processing receipt — JobID + RequestID + StatusURL are all
+// needed for the caller to poll. The Status field is NOT re-checked
+// here: the async branch is only entered after the caller gated on
+// m["status"].(string) == "processing", so by the time this validator
+// runs the status is guaranteed populated.
 func validateProxyAcceptedResponse(a *ProxyAcceptedResponse) error {
-	if a.Status == "" {
-		return fmt.Errorf("ProxyAcceptedResponse.status is empty")
-	}
 	if a.JobID == "" {
 		return fmt.Errorf("ProxyAcceptedResponse.job_id is empty")
 	}

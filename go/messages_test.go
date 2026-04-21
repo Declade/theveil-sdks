@@ -277,6 +277,13 @@ func TestMessages_Malformed200_NonJSON_RaisesResponseValidation(t *testing.T) {
 	if len(vErr.Body) == 0 {
 		t.Errorf("Body should be non-empty")
 	}
+	// Mirror TestGetCertificate_Malformed200_NonJSON: rawBodyBytes now
+	// json.Marshals unconditionally, so a non-JSON text body surfaces as
+	// a JSON-quoted string literal. Lock this form so a future regression
+	// of rawBodyBytes back to type-switch special-casing can't slip past.
+	if vErr.Body[0] != '"' {
+		t.Errorf("Body should be a JSON-quoted string for non-JSON input, got %q", string(vErr.Body))
+	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
 		t.Errorf("must not also be *HTTPError")
