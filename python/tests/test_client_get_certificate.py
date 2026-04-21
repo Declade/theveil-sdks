@@ -211,6 +211,26 @@ class TestPathEncoding:
             client.get_certificate(12345)  # type: ignore[arg-type]
 
 
+class TestLiteralNullBody:
+    @respx.mock
+    def test_literal_null_body_preserves_null_signal(self) -> None:
+        # A 2xx with literal JSON null parses to Python None, fails
+        # Pydantic validation, and must surface as
+        # TheVeilResponseValidationError with body = "null" (the raw
+        # pre-parse text) — NOT None. Callers can distinguish "gateway
+        # sent null" from "SDK forgot to populate .body."
+        respx.get(f"{BASE}{CERT_PATH_PREFIX}req_null").respond(
+            200, text="null", headers={"content-type": "application/json"}
+        )
+        client = _client()
+        with pytest.raises(TheVeilResponseValidationError) as exc_info:
+            client.get_certificate("req_null")
+        err = exc_info.value
+        # body is the raw pre-parse text, not parsed None.
+        assert err.body == "null", f"body = {err.body!r}"
+        assert err.body is not None
+
+
 class TestMalformed200:
     """Observed behaviour: non-JSON / wrong-shape 200 surfaces as
     :class:`TheVeilResponseValidationError` — distinct from

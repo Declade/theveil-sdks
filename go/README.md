@@ -202,13 +202,26 @@ Intentional idiomatic divergences from the other two SDKs:
   is reserved for non-2xx transport failures — an HTTP 200 is not an
   HTTP error. The same applies uniformly across `GetCertificate`,
   `Messages`, and any other 2xx-decode path.
-  Note: a 2xx JSON object missing required fields still
-  returns `(*VeilCertificate, nil)` (or `(*ProxySyncResponse, nil)` for
-  `Messages`) with zero-valued fields, because Go's `json.Unmarshal` is
-  permissive on field presence — the decode itself does not fail. This
-  matches TS thin-transport behaviour for the value-present path.
-  Downstream `VerifyCertificate` rejects such a zero-valued struct with
-  `ReasonMalformed`.
+  A 2xx JSON object whose shape is structurally valid but whose
+  required fields are missing (Go's `json.Unmarshal` zero-values them
+  permissively) is also rejected with `*ResponseValidationError` — the
+  per-type `validateVeilCertificate` / `validateProxySyncResponse` /
+  `validateProxyAcceptedResponse` helpers guard against silent "apparent
+  success with zero-valued struct."
+- **Error `.Body` type on over-cap**: Go stores the preserved prefix
+  as `[]byte` — idiomatic for Go callers used to `resp.Body`-style
+  byte-slice access. The Python SDK stores `.body` as `str`
+  (UTF-8-decoded with `errors='replace'`) — idiomatic for Python
+  callers used to `httpx.Response.text` / `.json()`. Behaviour parity
+  holds at the "the prefix is preserved, bounded, and
+  diagnostic-readable" level; the representation is intentionally
+  language-idiomatic, not byte-identical.
+- **Literal JSON null body**: when the gateway returns a 2xx with the
+  literal `null` payload, `json.Unmarshal` produces Go `nil`; the SDK's
+  `rawBodyBytes` re-marshals through `json.Marshal(nil)` to emit
+  `[]byte("null")` on `*ResponseValidationError.Body`, preserving the
+  "gateway sent null" signal so callers can distinguish it from "SDK
+  forgot to populate `.Body`."
 
 ## Release
 

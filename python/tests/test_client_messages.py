@@ -230,6 +230,22 @@ class TestLatencyMsLeniency:
         assert resp.latency_ms == 0
 
 
+class TestLiteralNullBody:
+    @respx.mock
+    def test_literal_null_body_preserves_null_signal(self) -> None:
+        # Mirrors TestLiteralNullBody in test_client_get_certificate.py —
+        # the messages() path must behave identically for a literal null
+        # 2xx response.
+        respx.post(MESSAGES_URL).respond(
+            200, text="null", headers={"content-type": "application/json"}
+        )
+        with pytest.raises(TheVeilResponseValidationError) as exc_info:
+            _client().messages(_params())
+        err = exc_info.value
+        assert err.body == "null", f"body = {err.body!r}"
+        assert err.body is not None
+
+
 class TestMalformed200:
     @respx.mock
     def test_missing_required_sync_fields_raises_response_validation_error(

@@ -480,6 +480,32 @@ func TestGetCertificate_Malformed200_NonJSON(t *testing.T) {
 	}
 }
 
+func TestGetCertificate_LiteralNullBody_PreservesNullSignal(t *testing.T) {
+	// A 2xx response with a literal JSON null body parses cleanly (Go
+	// nil), fails required-field validation, and must surface as
+	// *ResponseValidationError with Body = []byte("null") — not nil.
+	// This distinguishes "gateway sent null" from "SDK forgot to
+	// populate .Body" in the caller's diagnostic output.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte("null"))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	cert, err := c.GetCertificate(context.Background(), "req_null")
+	if cert != nil {
+		t.Errorf("expected nil cert on null-body failure")
+	}
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if string(vErr.Body) != "null" {
+		t.Errorf("Body = %q, want %q", string(vErr.Body), "null")
+	}
+}
+
 func TestGetCertificate_Non2xx_UsesHTTPErrorNotResponseValidation(t *testing.T) {
 	// Invariant: non-2xx MUST still raise *HTTPError, not
 	// *ResponseValidationError. The new class must never fire for

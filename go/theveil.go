@@ -314,10 +314,14 @@ func validateProxyAcceptedResponse(a *ProxyAcceptedResponse) error {
 // json.Unmarshal cannot fail in practice (channels/funcs/cycles are the
 // only rejection cases, and none can originate from unmarshal of JSON),
 // so the error branch is defensive-dead but kept for invariant.
+//
+// For a literal `null` JSON 2xx response, json.Unmarshal produces Go
+// nil — no special-case short-circuit here; json.Marshal(nil) naturally
+// returns []byte("null"), preserving the "gateway sent null" signal on
+// the resulting *ResponseValidationError.Body. This is the
+// Marc-approved fix for the "nil Body looks like SDK forgot to set it"
+// finding from PR #13's Codex round.
 func rawBodyBytes(body any) []byte {
-	if body == nil {
-		return nil
-	}
 	b, err := json.Marshal(body)
 	if err != nil {
 		return nil

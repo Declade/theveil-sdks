@@ -136,6 +136,19 @@ Intentional divergences where TS semantics don't port cleanly to Python:
   surface; Python fails earlier (at fetch) because Pydantic validates
   at deserialize-time, and the failure class names the reason
   precisely instead of lying via `status=200`.
+- **Error `.body` type on over-cap**: Python stores the preserved
+  prefix as `str` (UTF-8-decoded with `errors='replace'`) — idiomatic
+  for Python SDK callers used to `httpx.Response.text` / `.json()`.
+  The Go SDK stores `.Body` as `[]byte` for the same case — idiomatic
+  for Go callers used to `resp.Body`-style byte-slice access. Behaviour
+  parity holds at the "the prefix is preserved, bounded, and
+  diagnostic-readable" level; the representation is intentionally
+  language-idiomatic, not byte-identical.
+- **Literal JSON null body**: when the gateway returns a 2xx with the
+  literal `null` payload, the parsed body is Python `None`; the SDK
+  falls back to the raw pre-parse text (`"null"`) for
+  `TheVeilResponseValidationError.body` so callers can distinguish
+  "gateway sent null" from "SDK forgot to populate the error body."
 
 ## Development
 

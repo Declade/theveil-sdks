@@ -106,9 +106,16 @@ func TestResponseValidationError_IsNotHTTPError(t *testing.T) {
 // the always-json.Marshal behaviour so a future refactor can't regress
 // to type-switch special-casing.
 
-func TestRawBodyBytes_NilReturnsNil(t *testing.T) {
-	if got := rawBodyBytes(nil); got != nil {
-		t.Errorf("rawBodyBytes(nil) = %v, want nil", got)
+// A literal `null` JSON 2xx response parses to Go nil; rawBodyBytes must
+// emit []byte("null") (the valid JSON null literal) so the caller can
+// distinguish "gateway sent null" from "SDK forgot to populate .Body".
+// The earlier short-circuit (if body == nil, return nil) silently lost
+// that signal; this test locks the Marc-approved fix.
+func TestRawBodyBytes_NilReturnsJSONNullLiteral(t *testing.T) {
+	got := rawBodyBytes(nil)
+	want := []byte("null")
+	if string(got) != string(want) {
+		t.Errorf("rawBodyBytes(nil) = %q, want %q", string(got), string(want))
 	}
 }
 

@@ -196,13 +196,13 @@ class TheVeil:
             )
 
         body_json = params.model_dump_json(exclude_none=True)
-        status, body = self._request(
+        status, body, raw_text = self._request(
             path="/api/v1/proxy/messages",
             method="POST",
             body=body_json,
             options=options,
         )
-        return _parse_proxy_response(status, body)
+        return _parse_proxy_response(status, body, raw_text)
 
     def verify_certificate(
         self,
@@ -248,7 +248,7 @@ class TheVeil:
         # SDK should never emit raw `..` or unescaped separators.
         encoded = quote(request_id, safe="")
 
-        status, body = self._request(
+        status, body, raw_text = self._request(
             path=f"/api/v1/veil/certificate/{encoded}",
             method="GET",
             body=None,
@@ -269,9 +269,14 @@ class TheVeil:
             # dedicated response-validation class so callers can branch on
             # "transport failed (TheVeilHttpError)" vs "body doesn't look
             # like a VeilCertificate (TheVeilResponseValidationError)".
+            #
+            # When the parsed body is None (literal JSON null response),
+            # fall back to the raw text ("null") so callers can distinguish
+            # "gateway sent null" from "error body not populated."
+            effective_body = raw_text if body is None else body
             raise TheVeilResponseValidationError(
                 "Response body failed to deserialize as VeilCertificate",
-                body=body,
+                body=effective_body,
                 cause=exc,
             ) from exc
 
@@ -284,14 +289,19 @@ class TheVeil:
         method: str,
         body: str | None,
         options: MessagesOptions | None,
-    ) -> tuple[int, Any]:
-        """Execute a single HTTP request and return ``(status, body)``.
+    ) -> tuple[int, Any, str]:
+        """Execute a single HTTP request and return ``(status, body, raw_text)``.
 
-        Mirror of TS ``request<T>``. Body is returned as parsed JSON when
-        the response text is non-empty and parses as JSON; otherwise the
-        raw text. Non-2xx responses raise :class:`TheVeilHttpError`. A
-        timeout raises :class:`TheVeilTimeoutError`. Other transport
-        failures raise :class:`TheVeilError` with ``__cause__`` set.
+        Mirror of TS ``request<T>``. ``body`` is returned as parsed JSON
+        when the response text is non-empty and parses as JSON; otherwise
+        the raw text. ``raw_text`` is the full pre-parse response as a
+        UTF-8 string (lenient-decoded with ``errors='replace'``) — callers
+        fall back to this when the parsed body is ``None`` so the error
+        surface can preserve the "gateway sent null / empty" signal
+        without being confused with "SDK forgot to set .body".
+        Non-2xx responses raise :class:`TheVeilHttpError`. A timeout
+        raises :class:`TheVeilTimeoutError`. Other transport failures
+        raise :class:`TheVeilError` with ``__cause__`` set.
 
         The 2xx happy-path body passes through without shape validation —
         thin-transport rule (matches TS SDK). Callers doing meaningful
@@ -408,10 +418,10 @@ class TheVeil:
                 body=parsed_body,
             )
 
-        return status_code, parsed_body
+        return status_code, parsed_body, text
 
 
-def _parse_proxy_response(status: int, body: Any) -> ProxyResponse:
+def _parse_proxy_response(status: int, body: Any, raw_text: str) -> ProxyResponse:
     """Discriminate ``messages()`` body into the sync / async union.
 
     Mirrors the TS SDK's behaviour: ``body["status"] == "processing"`` →
@@ -420,6 +430,11 @@ def _parse_proxy_response(status: int, body: Any) -> ProxyResponse:
     dedicated class for 2xx-wrong-shape responses. The ``status`` kwarg
     is kept for future use (e.g. a follow-up 201/204 semantic branch);
     the current 2xx paths share the same discrimination.
+
+    ``raw_text`` is the pre-parse response text; it's used as a
+    fall-back for the error's ``body`` attribute when the parsed body
+    is ``None`` (literal JSON ``null`` response), preserving the
+    "gateway sent null" signal on the diagnostic surface.
     """
 
     if isinstance(body, dict) and body.get("status") == "processing":
@@ -430,16 +445,18 @@ def _parse_proxy_response(status: int, body: Any) -> ProxyResponse:
             # The ``status`` kwarg here is the real transport status; we drop
             # it because TheVeilResponseValidationError does not model it
             # (status was always 2xx in this branch).
+            effective_body = raw_text if body is None else body
             raise TheVeilResponseValidationError(
                 "Response body failed to deserialize as ProxyAcceptedResponse",
-                body=body,
+                body=effective_body,
                 cause=exc,
             ) from exc
     try:
         return ProxySyncResponse.model_validate(body)
     except ValidationError as exc:
+        effective_body = raw_text if body is None else body
         raise TheVeilResponseValidationError(
             "Response body failed to deserialize as ProxySyncResponse",
-            body=body,
+            body=effective_body,
             cause=exc,
         ) from exc
