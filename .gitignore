@@ -26,3 +26,6 @@ coverage.out
 .vscode/
 .idea/
 *.swp
+
+# Superpowers skill output belongs in /tmp/, not the repo
+docs/superpowers/

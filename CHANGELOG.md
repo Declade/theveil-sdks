@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Python [0.1.0]** — first full implementation. `theveil` on PyPI.
+  `TheVeil` client with `messages`, `get_certificate`,
+  `verify_certificate`. Six typed exception classes (`TheVeilError`
+  base + `TheVeilConfigError` / `TheVeilHttpError` /
+  `TheVeilResponseValidationError` / `TheVeilTimeoutError` /
+  `TheVeilCertificateError`). `TheVeilResponseValidationError` is
+  raised on a 2xx response whose body doesn't fit the declared type
+  (wrong shape OR over-cap), distinct from `TheVeilHttpError` which
+  is reserved for non-2xx transport failures + the 202 pending
+  wrapper. Full `VeilCertificate` + sub-type Pydantic models with
+  `extra='ignore'` to match TS thin-transport. `httpx` sync client;
+  async client in a later arc. Cross-language byte-equivalence via
+  Go-assembler-reference hex fixture + Go-oracle-signed cert fixture.
+  155+ tests passing on Python 3.10–3.13.
+- **Go [v0.1.0]** — first full implementation. Module
+  `github.com/declade/theveil-sdks/go`. `theveil.Client` with
+  `Messages`, `GetCertificate`, `VerifyCertificate`. Six typed error
+  structs satisfying a `theveil.Error` interface, all with `Unwrap()`
+  for `errors.As`/`errors.Is`: `*ConfigError`, `*HTTPError`,
+  `*ResponseValidationError`, `*TimeoutError`, `*NetworkError`,
+  `*CertificateError`. `*ResponseValidationError` surfaces on a 2xx
+  response whose body fails to decode OR fails required-field
+  validation (json.Unmarshal is permissive — a body like
+  `{"unrelated":"junk"}` would otherwise zero-value the struct), OR
+  on a 2xx over-cap body. Functional options pattern (`WithBaseURL`,
+  `WithTimeout`, `WithHTTPClient`, `WithMaxResponseBytes`,
+  `WithCallTimeout`, `WithCallHeader`). Zero runtime dependencies.
+  `context.Context` for cancellation/timeout. Cross-language byte-
+  equivalence via the same shared fixtures. 97+ tests passing on
+  Go 1.22–1.23; `go vet` and `go test -race` clean.
 - Monorepo scaffolding (TypeScript subdir initialized; Python and Go placeholders)
 - TypeScript: `TheVeil` client with `apiKey` validation, `baseUrl` normalization,
   per-call timeout composition, and four typed error classes
