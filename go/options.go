@@ -41,7 +41,11 @@ func WithHTTPClient(h *http.Client) Option {
 
 // WithMaxResponseBytes sets the maximum response-body size the SDK will
 // read from the gateway. Responses exceeding this cap are aborted with
-// *HTTPError rather than buffered into memory. Must be positive.
+// *ResponseValidationError on a 2xx status (the body was not consumable)
+// or *HTTPError on a non-2xx status (the transport status is the
+// dominant signal). The prefix of the body read before the cap was hit
+// is preserved on the error's Body field for diagnostic inspection.
+// Must be positive.
 //
 // The default is 10 MiB — deliberately generous; certificates are
 // typically <50 KB and messages responses rarely exceed 1 MB. The cap

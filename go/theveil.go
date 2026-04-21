@@ -131,6 +131,18 @@ func (c *Client) Messages(ctx context.Context, req MessagesRequest, opts ...Call
 					Err:     decodeErr,
 				}
 			}
+			// Even on a clean json.Unmarshal, Go is permissive on field
+			// presence — a body like {"unrelated":"junk"} decodes into a
+			// zero-valued *ProxyAcceptedResponse. Enforce the required-field
+			// set explicitly so wrong-shape bodies can't sneak through as
+			// apparent success.
+			if valErr := validateProxyAcceptedResponse(&async); valErr != nil {
+				return nil, &ResponseValidationError{
+					Body:    rawBodyBytes(respBody),
+					Message: "response decoded but " + valErr.Error(),
+					Err:     valErr,
+				}
+			}
 			return &async, nil
 		}
 	}
@@ -140,6 +152,13 @@ func (c *Client) Messages(ctx context.Context, req MessagesRequest, opts ...Call
 			Body:    rawBodyBytes(respBody),
 			Message: "response failed to deserialize as ProxySyncResponse: " + decodeErr.Error(),
 			Err:     decodeErr,
+		}
+	}
+	if valErr := validateProxySyncResponse(&sync); valErr != nil {
+		return nil, &ResponseValidationError{
+			Body:    rawBodyBytes(respBody),
+			Message: "response decoded but " + valErr.Error(),
+			Err:     valErr,
 		}
 	}
 	_ = status // non-2xx was already handled inside c.do via *HTTPError
@@ -190,29 +209,102 @@ func (c *Client) GetCertificate(ctx context.Context, requestID string, opts ...C
 			Err:     decodeErr,
 		}
 	}
+	// json.Unmarshal is permissive on field presence — a body like
+	// {"unrelated":"junk"} decodes into a zero-valued *VeilCertificate
+	// with no error. Explicitly require the fields a genuine Veil cert
+	// cannot omit so wrong-shape bodies cannot surface as apparent
+	// success with a zero-value *VeilCertificate.
+	if valErr := validateVeilCertificate(&cert); valErr != nil {
+		return nil, &ResponseValidationError{
+			Body:    rawBodyBytes(respBody),
+			Message: "response decoded but " + valErr.Error(),
+			Err:     valErr,
+		}
+	}
 	_ = status // non-2xx was already handled inside c.do via *HTTPError
 	return &cert, nil
 }
 
-// rawBodyBytes re-serializes the transport-parsed body back into raw bytes
-// for *ResponseValidationError.Body. If the transport returned a string
-// (non-JSON 2xx path), emit the UTF-8 bytes directly; otherwise marshal
-// the parsed JSON back to bytes.
-func rawBodyBytes(body any) []byte {
-	switch v := body.(type) {
-	case nil:
-		return nil
-	case string:
-		return []byte(v)
-	case []byte:
-		return v
-	default:
-		b, err := json.Marshal(body)
-		if err != nil {
-			return nil
-		}
-		return b
+// validateVeilCertificate enforces the set of fields a genuine Veil
+// Certificate MUST carry — zero-value on any of these means the body
+// wasn't a cert even though json.Unmarshal accepted it. Kept minimal:
+// only fields whose zero value is indisputably wrong. Optional /
+// opaque / tier-gated fields (attestation, anchor_status, claims[i]
+// internals) are not policed here; downstream VerifyCertificate
+// rejects fuller invariants (request_id match, verdict enum, etc.).
+func validateVeilCertificate(c *VeilCertificate) error {
+	if c.CertificateID == "" {
+		return fmt.Errorf("VeilCertificate.certificate_id is empty")
 	}
+	if c.RequestID == "" {
+		return fmt.Errorf("VeilCertificate.request_id is empty")
+	}
+	if c.WitnessSignature == "" {
+		return fmt.Errorf("VeilCertificate.witness_signature is empty")
+	}
+	if c.WitnessKeyID == "" {
+		return fmt.Errorf("VeilCertificate.witness_key_id is empty")
+	}
+	if c.IssuedAt == "" {
+		return fmt.Errorf("VeilCertificate.issued_at is empty")
+	}
+	return nil
+}
+
+// validateProxySyncResponse enforces the minimum field set for a sync
+// (200) terminal result — Status discriminates COMPLETED vs FAILED and
+// ModelUsed names which provider model served the request. LatencyMs is
+// not required (the gateway may legitimately emit 0 on sub-ms paths).
+func validateProxySyncResponse(s *ProxySyncResponse) error {
+	if s.Status == "" {
+		return fmt.Errorf("ProxySyncResponse.status is empty")
+	}
+	if s.ModelUsed == "" {
+		return fmt.Errorf("ProxySyncResponse.model_used is empty")
+	}
+	return nil
+}
+
+// validateProxyAcceptedResponse enforces the minimum field set for an
+// async (202) processing receipt — Status must be "processing" (which
+// the caller already gated on before construction), JobID + StatusURL
+// are both needed for the caller to poll.
+func validateProxyAcceptedResponse(a *ProxyAcceptedResponse) error {
+	if a.Status == "" {
+		return fmt.Errorf("ProxyAcceptedResponse.status is empty")
+	}
+	if a.JobID == "" {
+		return fmt.Errorf("ProxyAcceptedResponse.job_id is empty")
+	}
+	if a.RequestID == "" {
+		return fmt.Errorf("ProxyAcceptedResponse.request_id is empty")
+	}
+	if a.StatusURL == "" {
+		return fmt.Errorf("ProxyAcceptedResponse.status_url is empty")
+	}
+	return nil
+}
+
+// rawBodyBytes re-serializes the transport-parsed body back into raw
+// bytes for *ResponseValidationError.Body.
+//
+// Always round-trips through json.Marshal — no type-switch special-casing
+// for strings or []byte. The minor re-serialization cost (a non-JSON 2xx
+// body becomes a JSON-quoted string literal) is traded for fidelity:
+// callers get a single, predictable encoding on .Body regardless of
+// upstream content-type. json.Marshal of a value already produced by
+// json.Unmarshal cannot fail in practice (channels/funcs/cycles are the
+// only rejection cases, and none can originate from unmarshal of JSON),
+// so the error branch is defensive-dead but kept for invariant.
+func rawBodyBytes(body any) []byte {
+	if body == nil {
+		return nil
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // VerifyCertificate is the method form of the package-level
@@ -308,6 +400,11 @@ func (c *Client) do(
 		}
 	}
 	if int64(len(respBytes)) > c.maxResponseBytes {
+		// Preserve the prefix we already buffered — truncated to the cap
+		// for bounded memory. Callers inspecting the over-cap error can
+		// see how the gateway was starting to respond, useful for
+		// diagnosing misbehaving endpoints.
+		partial := respBytes[:c.maxResponseBytes]
 		// Cap-overflow on a 2xx means "gateway replied with apparent success
 		// but the body we received is not consumable" — route via
 		// *ResponseValidationError so the "*HTTPError never fires on 2xx"
@@ -316,13 +413,13 @@ func (c *Client) do(
 		// error AND an oversized body.
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return resp.StatusCode, nil, &ResponseValidationError{
-				Body:    nil,
+				Body:    partial,
 				Message: fmt.Sprintf("response body exceeded MaxResponseBytes cap of %d", c.maxResponseBytes),
 			}
 		}
 		return resp.StatusCode, nil, &HTTPError{
 			Status:  resp.StatusCode,
-			Body:    nil,
+			Body:    partial,
 			Message: fmt.Sprintf("response body exceeded MaxResponseBytes cap of %d", c.maxResponseBytes),
 		}
 	}

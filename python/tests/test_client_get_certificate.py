@@ -282,7 +282,9 @@ class TestMaxResponseBytesEnforcement:
         # 2xx-body-unusable failure as a wrong-shape body. *HTTPError*
         # stays reserved for non-2xx transport failures.
         respx.get(f"{BASE}{CERT_PATH_PREFIX}req_big").respond(
-            200, text="x" * 1024, headers={"content-type": "text/plain"}
+            200,
+            text="PREFIX_MARKER_" + "x" * 1024,
+            headers={"content-type": "text/plain"},
         )
         client = TheVeil(
             TheVeilConfig(api_key=VALID_KEY, max_response_bytes=256)
@@ -293,14 +295,22 @@ class TestMaxResponseBytesEnforcement:
             client.get_certificate("req_big")
         # Invariant: must NOT also be TheVeilHttpError.
         assert not isinstance(exc_info.value, TheVeilHttpError)
+        # Body preservation: the accumulated prefix bytes must be on the
+        # error so callers can diagnose misbehaving gateways. We check
+        # both non-emptiness and the marker is present.
+        assert exc_info.value.body, "body should carry the accumulated prefix"
+        assert isinstance(exc_info.value.body, str)
+        assert "PREFIX_MARKER_" in exc_info.value.body
 
     @respx.mock
     def test_non_2xx_over_cap_still_raises_http_error(self) -> None:
         # Cap-overflow on a non-2xx keeps *HTTPError* — the caller saw a
         # transport error AND an oversized body; the transport error is
-        # the dominant signal.
+        # the dominant signal. Body preservation applies to this path too.
         respx.get(f"{BASE}{CERT_PATH_PREFIX}req_big_err").respond(
-            502, text="x" * 1024, headers={"content-type": "text/plain"}
+            502,
+            text="ERROR_MARKER_" + "x" * 1024,
+            headers={"content-type": "text/plain"},
         )
         client = TheVeil(
             TheVeilConfig(api_key=VALID_KEY, max_response_bytes=256)
@@ -308,6 +318,9 @@ class TestMaxResponseBytesEnforcement:
         with pytest.raises(TheVeilHttpError, match="max_response_bytes") as exc_info:
             client.get_certificate("req_big_err")
         assert exc_info.value.status == 502
+        assert exc_info.value.body, "body should carry the accumulated prefix"
+        assert isinstance(exc_info.value.body, str)
+        assert "ERROR_MARKER_" in exc_info.value.body
 
     @respx.mock
     def test_response_at_cap_is_accepted(

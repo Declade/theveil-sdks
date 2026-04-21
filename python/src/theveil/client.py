@@ -333,19 +333,34 @@ class TheVeil:
                 ) as response:
                     status_code = response.status_code
                     reason_phrase = response.reason_phrase
-                    # Stream + accumulate so a 10 GB body can't OOM the client.
-                    # We read one extra byte past the cap so the >cap check
-                    # can distinguish "exactly cap" from "over cap".
-                    received = 0
+                    # Stream + accumulate so a 10 GB body can't OOM the
+                    # client. Buffer up to exactly self.max_response_bytes;
+                    # any byte beyond that triggers over_cap = True. Preserve
+                    # the cap-sized prefix even when the first chunk arrives
+                    # larger than the cap (common with respx / httptest or
+                    # small-body responses from a streaming gateway).
+                    accumulated = 0
                     chunks: list[bytes] = []
                     over_cap = False
                     for chunk in response.iter_bytes():
-                        received += len(chunk)
-                        if received > self.max_response_bytes:
+                        budget = self.max_response_bytes - accumulated
+                        if budget <= 0:
+                            over_cap = True
+                            break
+                        if len(chunk) > budget:
+                            chunks.append(chunk[:budget])
+                            accumulated += budget
                             over_cap = True
                             break
                         chunks.append(chunk)
+                        accumulated += len(chunk)
                     if over_cap:
+                        # Preserve the accumulated prefix bytes (<= cap) so
+                        # the caller can diagnose misbehaving gateways.
+                        # Decode lenient (errors='replace') for str form.
+                        partial = b"".join(chunks).decode(
+                            "utf-8", errors="replace"
+                        )
                         # Cap-overflow on a 2xx means "gateway replied with
                         # apparent success but the body we received is not
                         # consumable" — the same rationale as shape-validation
@@ -356,13 +371,13 @@ class TheVeil:
                             raise TheVeilResponseValidationError(
                                 "response body exceeded max_response_bytes cap of "
                                 f"{self.max_response_bytes}",
-                                body=None,
+                                body=partial,
                             )
                         raise TheVeilHttpError(
                             "response body exceeded max_response_bytes cap of "
                             f"{self.max_response_bytes}",
                             status=status_code,
-                            body=None,
+                            body=partial,
                         )
                     raw_bytes = b"".join(chunks)
         except httpx.TimeoutException as exc:

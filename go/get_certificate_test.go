@@ -289,7 +289,7 @@ func TestGetCertificate_RejectsEmptyRequestID(t *testing.T) {
 // -- MaxResponseBytes enforcement ---------------------------------------
 
 func TestGetCertificate_2xxOverCap_RaisesResponseValidationError(t *testing.T) {
-	big := strings.Repeat("x", 1024)
+	big := "PREFIX_MARKER_" + strings.Repeat("x", 1024)
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/plain")
 		_, _ = w.Write([]byte(big))
@@ -312,6 +312,17 @@ func TestGetCertificate_2xxOverCap_RaisesResponseValidationError(t *testing.T) {
 	if !strings.Contains(vErr.Message, "MaxResponseBytes") {
 		t.Errorf("message should mention cap: %q", vErr.Message)
 	}
+	// Body preservation: accumulated prefix must land on Body (truncated
+	// to the cap, so the marker prefix survives).
+	if len(vErr.Body) == 0 {
+		t.Errorf("Body should carry the accumulated prefix, not nil")
+	}
+	if int64(len(vErr.Body)) > 256 {
+		t.Errorf("Body should be truncated to the cap, got %d bytes", len(vErr.Body))
+	}
+	if !strings.Contains(string(vErr.Body), "PREFIX_MARKER_") {
+		t.Errorf("Body should contain the prefix marker: %q", string(vErr.Body))
+	}
 	// Invariant: must NOT also be *HTTPError on a 2xx over-cap.
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
@@ -322,8 +333,10 @@ func TestGetCertificate_2xxOverCap_RaisesResponseValidationError(t *testing.T) {
 func TestGetCertificate_Non2xxOverCap_RaisesHTTPError(t *testing.T) {
 	// Cap-overflow on a non-2xx keeps *HTTPError — the transport status
 	// is the dominant signal. Gateway that returns 502 with an oversized
-	// body should surface as 502, not wrong-shape.
-	big := strings.Repeat("x", 1024)
+	// body should surface as 502, not wrong-shape. Body preservation
+	// applies to this path too so callers can still see what the gateway
+	// was starting to send.
+	big := "ERROR_MARKER_" + strings.Repeat("x", 1024)
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/plain")
 		w.WriteHeader(502)
@@ -346,6 +359,13 @@ func TestGetCertificate_Non2xxOverCap_RaisesHTTPError(t *testing.T) {
 	}
 	if httpErr.Status != 502 {
 		t.Errorf("status = %d", httpErr.Status)
+	}
+	bodyBytes, ok := httpErr.Body.([]byte)
+	if !ok {
+		t.Fatalf("Body should be []byte on over-cap path, got %T", httpErr.Body)
+	}
+	if !strings.Contains(string(bodyBytes), "ERROR_MARKER_") {
+		t.Errorf("Body should contain the error marker: %q", string(bodyBytes))
 	}
 }
 
@@ -429,8 +449,19 @@ func TestGetCertificate_Malformed200_NonJSON(t *testing.T) {
 	if !errors.As(err, &vErr) {
 		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
 	}
-	if string(vErr.Body) != "not json at all" {
-		t.Errorf("body = %q", string(vErr.Body))
+	// rawBodyBytes now json.Marshals unconditionally (no string special-
+	// case), so a non-JSON text body surfaces as a JSON-quoted literal —
+	// the trade-off is fidelity: .Body is always valid JSON. The raw text
+	// is still recoverable (json.Unmarshal it back to string) and the
+	// substring assertion locks in "the original content is preserved,
+	// just re-encoded."
+	if !strings.Contains(string(vErr.Body), "not json at all") {
+		t.Errorf("Body should preserve the original content: %q", string(vErr.Body))
+	}
+	// The re-serialized body is a JSON string literal, not a bare JSON
+	// object. Confirm by inspecting the leading byte.
+	if len(vErr.Body) == 0 || vErr.Body[0] != '"' {
+		t.Errorf("Body should be a JSON-quoted string for non-JSON input, got %q", string(vErr.Body))
 	}
 	// Invariant: must NOT also be an *HTTPError — semantic distinction.
 	var httpErr *HTTPError
@@ -475,40 +506,46 @@ func TestGetCertificate_Non2xx_UsesHTTPErrorNotResponseValidation(t *testing.T) 
 	}
 }
 
-func TestGetCertificate_Malformed200_MissingRequiredFields(t *testing.T) {
+func TestGetCertificate_Malformed200_MissingRequiredFields_RaisesResponseValidation(t *testing.T) {
 	// Go's json.Unmarshal is permissive on missing fields (zero-values
-	// them) — so the decode itself succeeds on a valid JSON object that
-	// happens to lack required cert fields. This documents the current
-	// behaviour: no *ResponseValidationError fires here because the
-	// underlying json.Unmarshal didn't fail. The caller's subsequent
-	// VerifyCertificate call rejects the zero-valued result with
-	// ReasonMalformed, per the thin-transport contract.
+	// them) — so the decode itself succeeds on a valid JSON object
+	// lacking cert fields. Without explicit required-field validation
+	// the SDK would return a zero-value *VeilCertificate as apparent
+	// success, leaving the burden to VerifyCertificate. The SDK now
+	// enforces the required-field set in validateVeilCertificate(),
+	// so wrong-shape 2xx bodies surface as *ResponseValidationError
+	// with the raw body preserved.
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		_, _ = w.Write([]byte(`{"not_a_cert": true}`))
+		_, _ = w.Write([]byte(`{"unrelated": "junk"}`))
 	}
 	c, server := newMockedClient(t, handler)
 	defer server.Close()
 
 	cert, err := c.GetCertificate(context.Background(), "req_partial_0001")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if cert != nil {
+		t.Errorf("expected nil cert on required-field failure, got %+v", cert)
 	}
-	// Fields default to zero-values. This is intentional — thin transport.
-	if cert.CertificateID != "" {
-		t.Errorf("expected empty CertificateID, got %q", cert.CertificateID)
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
 	}
-	// Downstream VerifyCertificate would reject this with Reason=Malformed.
-	// We assert that here for clarity.
-	_, verifyErr := VerifyCertificate(cert, VerifyCertificateKeys{
-		WitnessKeyID:     "witness_v1",
-		WitnessPublicKey: make([]byte, 32),
-	})
-	var certErr *CertificateError
-	if !errors.As(verifyErr, &certErr) {
-		t.Fatalf("downstream verify should reject: %v", verifyErr)
+	if !strings.Contains(vErr.Message, "certificate_id") {
+		t.Errorf("message should name the missing field: %q", vErr.Message)
 	}
-	if certErr.Reason != ReasonMalformed {
-		t.Errorf("downstream reason = %q", certErr.Reason)
+	if len(vErr.Body) == 0 {
+		t.Errorf("Body should be non-empty (raw server bytes)")
+	}
+	if !strings.Contains(string(vErr.Body), "unrelated") {
+		t.Errorf("Body should contain the raw response: %q", string(vErr.Body))
+	}
+	// Invariant: still not an *HTTPError.
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		t.Errorf("must not also be *HTTPError")
+	}
+	// Err wraps the underlying validation cause for errors.Is/As walks.
+	if vErr.Err == nil {
+		t.Errorf("Err should wrap the validation cause")
 	}
 }

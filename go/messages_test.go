@@ -232,39 +232,29 @@ func TestMessages_PerCallTimeoutOverrides(t *testing.T) {
 
 // -- Malformed 200 body -------------------------------------------------
 
-func TestMessages_Malformed200_BodyPassthrough(t *testing.T) {
-	// Go's json.Unmarshal is permissive: missing fields zero-value the
-	// struct. Thin-transport contract: fetch succeeds; downstream logic
-	// decides what to do with an incomplete ProxySyncResponse.
-	//
-	// Note: no *ResponseValidationError fires here because the underlying
-	// json.Unmarshal did not fail — it just produced a mostly-empty
-	// struct. ResponseValidationError fires when Unmarshal *itself* errors
-	// (wrong JSON type, syntax error, etc.) — see TestMessages_Malformed200_NonJSON.
+func TestMessages_Malformed200_PresentStatusButMissingModel_RaisesResponseValidation(t *testing.T) {
+	// A body with only `status` set — json.Unmarshal succeeds but
+	// ProxySyncResponse is missing its required `model_used` field.
+	// validateProxySyncResponse rejects; caller gets
+	// *ResponseValidationError rather than a bogus zero-valued struct
+	// masquerading as apparent success.
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		// Non-processing, non-COMPLETED body — missing model_used, latency_ms.
 		_, _ = w.Write([]byte(`{"status": "JOB_STATUS_COMPLETED"}`))
 	}
 	c, server := newMockedClient(t, handler)
 	defer server.Close()
 
 	resp, err := c.Messages(context.Background(), basicMessagesRequest())
-	if err != nil {
-		t.Fatalf("unexpected: %v", err)
+	if resp != nil {
+		t.Errorf("expected nil resp on required-field failure")
 	}
-	sync, ok := resp.(*ProxySyncResponse)
-	if !ok {
-		t.Fatalf("want *ProxySyncResponse, got %T", resp)
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
 	}
-	if sync.Status != "JOB_STATUS_COMPLETED" {
-		t.Errorf("status = %q", sync.Status)
-	}
-	if sync.ModelUsed != "" {
-		t.Errorf("model_used should be empty (zero value)")
-	}
-	if sync.LatencyMs != 0 {
-		t.Errorf("latency_ms should be zero")
+	if !strings.Contains(vErr.Message, "model_used") {
+		t.Errorf("message should name the missing field: %q", vErr.Message)
 	}
 }
 
@@ -315,6 +305,66 @@ func TestMessages_Malformed202_ProcessingWithWrongType_RaisesResponseValidation(
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
 		t.Errorf("must not also be *HTTPError")
+	}
+}
+
+func TestMessages_Sync200_MissingRequiredFields_RaisesResponseValidation(t *testing.T) {
+	// json.Unmarshal accepts {"unrelated":"junk"} into ProxySyncResponse
+	// with all fields zero. validateProxySyncResponse rejects that so
+	// callers don't see a bogus apparent-success with empty Status /
+	// ModelUsed.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"unrelated":"junk"}`))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	resp, err := c.Messages(context.Background(), basicMessagesRequest())
+	if resp != nil {
+		t.Errorf("expected nil resp on required-field failure")
+	}
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if !strings.Contains(vErr.Message, "ProxySyncResponse") {
+		t.Errorf("message should name the type: %q", vErr.Message)
+	}
+	if !strings.Contains(string(vErr.Body), "unrelated") {
+		t.Errorf("Body should contain raw response: %q", string(vErr.Body))
+	}
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		t.Errorf("must not also be *HTTPError")
+	}
+}
+
+func TestMessages_Async202_MissingRequiredFields_RaisesResponseValidation(t *testing.T) {
+	// Body.status == "processing" routes to async branch, but all the
+	// other required fields (job_id, request_id, status_url) are
+	// missing. validateProxyAcceptedResponse rejects.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"processing"}`))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	resp, err := c.Messages(context.Background(), basicMessagesRequest())
+	if resp != nil {
+		t.Errorf("expected nil resp on required-field failure")
+	}
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if !strings.Contains(vErr.Message, "ProxyAcceptedResponse") {
+		t.Errorf("message should name the type: %q", vErr.Message)
+	}
+	if !strings.Contains(string(vErr.Body), "processing") {
+		t.Errorf("Body should preserve raw response: %q", string(vErr.Body))
 	}
 }
 

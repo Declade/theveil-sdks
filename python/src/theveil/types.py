@@ -58,10 +58,14 @@ class TheVeilConfig:
             ``anthropic-python`` convention.
         max_response_bytes: Maximum response-body size the SDK will read
             from the gateway, in bytes. Responses exceeding this cap raise
-            :class:`TheVeilHttpError` instead of being buffered into
-            memory. Defaults to 10 MiB (10 * 1024 * 1024). Pro / enterprise
-            callers expecting larger bodies should raise the cap
-            explicitly.
+            :class:`TheVeilResponseValidationError` on a 2xx status (the
+            body was not consumable) or :class:`TheVeilHttpError` on a
+            non-2xx status (the transport status is the dominant signal).
+            The prefix of the body read before the cap was hit is
+            preserved on the error's ``body`` attribute so callers can
+            diagnose misbehaving gateways. Defaults to 10 MiB
+            (10 * 1024 * 1024). Pro / enterprise callers expecting larger
+            bodies should raise the cap explicitly.
     """
 
     api_key: str
