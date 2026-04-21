@@ -1,9 +1,25 @@
 # Custom PyPI OIDC + twine publish — design note
 
-**Status:** Phase 1 design only. Awaits external Codex review + Marc's Section 8 decisions before Phase 2 (implementation).
+**Status:** Phase 1 design locked. Awaits external Codex review before Phase 2 (implementation).
 **Scope:** Python SDK (`theveil` on PyPI) publish workflow only. Does not touch `publish-ts.yml` or `publish-go.yml`.
 **Supersedes:** `.github/workflows/publish-python.yml`'s `- uses: pypa/gh-action-pypi-publish@<sha>` step only. Everything else in that workflow (trigger pattern, environment, permissions, build step) is retained.
 **Branch:** `arc/custom-pypi-oidc-publish` off `main` at `971066e`.
+
+---
+
+## Decisions locked
+
+All 7 decisions from Section 8 are locked. Summary for quick reference; detailed reasoning retained in Section 8.
+
+| # | Topic | Locked choice |
+|---|---|---|
+| 8.1 | Attestations | **A** — accept attestation loss; sigstore attestations as separate fast-follow arc (backlog-tracked, narrative-mismatch note retained so it doesn't get forgotten) |
+| 8.2 | `--skip-existing` | **A** — omit the flag; duplicate-version upload fails hard |
+| 8.3 | twine hash-pinning | **A** — version pin only (`twine==6.2.0`); `--require-hashes` filed as hardening backlog item alongside Dependabot |
+| 8.4 | Smoke-test change pairing | **(a)** — add `python/SECURITY.md`, referencing Clario security posture |
+| 8.5 | Single vs split step | **B (overridden from design recommendation A)** — two steps: mint step outputs masked token → upload step consumes via step-scoped `env:`. Rationale: split failure modes yield clearer `::error::` annotations in the Actions UI |
+| 8.6 | Upload URL | **Hardcode** `https://upload.pypi.org/legacy/` (self-documenting, immune to twine default changes) |
+| 8.7 | Retain `environment: pypi` | **Yes** — load-bearing for OIDC claim verification on PyPI side; do not touch |
 
 ---
 
@@ -154,22 +170,40 @@ The minted token is a standard PyPI API token (prefix `pypi-`). Lifetime per PyP
 - **Response 200 but `token` field missing/null** — fail hard; this should be impossible but would be a silent PyPI regression.
 - **Clock skew** — the JWT includes `iat`/`exp` claims. GitHub Actions runner clocks are synced against NTP; skew is never a realistic cause of `exp` rejection. If it ever becomes one, PyPI's 403 response will make the cause clear.
 
-### Step 2.4 — Token masking and scoping
+### Step 2.4 — Token masking and scoping (two-step flow — locked per 8.5)
 
-Immediately after the token is obtained and parsed, mask it:
+The workflow is split across two distinct steps (per 8.5 = B):
 
+- **Step A (mint):** performs 2.1 → 2.3; at the end, masks the minted token and writes it to the step's output. Upload artefacts are NOT touched in this step.
+- **Step B (upload):** consumes the token from Step A's output into its step-scoped `env:` block, runs `twine check` + `twine upload`, exits.
+
+**Token masking — ordering invariant:**
+
+The masking command MUST execute BEFORE the token is written anywhere the runner can log. Concretely, Step A's bash body is structured so that `::add-mask::<token>` is emitted to stderr before either `echo "token=<val>" >> "$GITHUB_OUTPUT"` or any other write. Failing to order this correctly would leak the token to the raw log before the scrubber learns about it.
+
+```bash
+# (inside Step A, after parsing the mint response)
+printf '::add-mask::%s\n' "$PYPI_TOKEN" 1>&2
+printf 'token=%s\n' "$PYPI_TOKEN" >> "$GITHUB_OUTPUT"
 ```
-::add-mask::<pypi-token-value>
-```
 
-This line is written to **stderr** before any other step could log the token. GitHub's runner scrubs the masked value from all subsequent log output.
+**Step-output handling (the overridden concern):**
 
-**Scoping rules:**
-- The token is NEVER written to `$GITHUB_OUTPUT`. `GITHUB_OUTPUT` is visible to downstream jobs and to step summaries.
-- The token is NEVER written to a file on disk (`~/.pypirc`, `/tmp/token`, etc.).
-- The token is held in a shell variable inside the single-step bash run that performs both mint + upload. Bash variables do not persist across steps, so the token is gone the moment the step exits.
-- Alternative considered: pass the token across steps via a masked `$GITHUB_OUTPUT` value. Rejected because (a) `GITHUB_OUTPUT` writes are durable across steps in the same job but also surface in step summaries under some runner versions; (b) collapsing mint+upload into one step keeps the token's lifetime in memory as short as possible.
-- **`env:` scoping:** if we decide to split mint + upload into two steps, the twine upload step's `env:` block gets `TWINE_PASSWORD: ${{ steps.mint.outputs.token }}` scoped to that step. Job-level `env:` is never used for the token.
+`$GITHUB_OUTPUT` writes are durable within the job's step-output map and are consumable by later steps via `${{ steps.mint.outputs.token }}`. The runner applies masking to the stored value across the job lifetime — any subsequent log statement that emits the masked string is scrubbed. Known footguns handled:
+
+- **Step summaries:** the runner's step-summary feature renders `GITHUB_STEP_SUMMARY` markdown, NOT step outputs. The minted token is never written to `$GITHUB_STEP_SUMMARY`. Codex should verify this invariant in the implemented YAML.
+- **Log echo on output write:** the runner does not echo `GITHUB_OUTPUT` lines to the log. The `printf 'token=...' >> "$GITHUB_OUTPUT"` line produces no log output. Verified against the pypa action's own token-handling (it prints the token to stdout where `twine-upload.sh` captures it via `$(python /app/oidc-exchange.py)`; our split-step variant is materially more explicit about masking).
+- **Job-level `env:`:** never used for the token. Only the upload step's own `env:` block gets `TWINE_PASSWORD: ${{ steps.mint.outputs.token }}`. This scopes the token to Step B's process tree; no other step (present or future) sees it.
+
+**Scoping rules (locked):**
+
+- Token is written ONLY to `$GITHUB_OUTPUT` of the mint step, and masked before that write.
+- Token is NEVER written to disk (`~/.pypirc`, `/tmp/token`, environment files on disk).
+- Token is NEVER written to `$GITHUB_STEP_SUMMARY` or `$GITHUB_ENV`.
+- Token is NEVER passed to any step other than Step B (upload).
+- Step B's `env:` block for `TWINE_PASSWORD` is scoped to that step's `run:` only, never to the job.
+
+**Trade-off accepted (per 8.5 override):** two-step split means the token persists in the job's step-output map for the lifetime of the job (several seconds between Step A and Step B). The single-step alternative would have held the token in a bash shell variable for a shorter lifetime. Marc's override prioritizes operator debuggability (Step A failure surfaces distinct from Step B failure in the Actions UI) over the marginally-shorter token lifetime. Codex should flag if the job-level step-output exposure is larger than expected — but under current GitHub Actions runner semantics, a masked step output is scrubbed consistently and cannot be exfiltrated by a later step unless that step explicitly writes the token to a new surface, which this design forbids.
 
 ---
 
@@ -188,10 +222,11 @@ python -m pip install --upgrade pip
 python -m pip install 'twine==6.2.0'
 ```
 
-**Decision point — `--require-hashes`:** See Section 8 question 3. Options:
+**Hash-pinning — LOCKED per 8.3 = A:** version pin only (`twine==6.2.0`), no constraints file, no `--require-hashes`. Hash-pinning is tracked as a hardening backlog item alongside Dependabot enablement — both land uniformly across all three SDKs' CI workflows in a later arc, not just this one.
 
-- **A — version pin only** (`twine==6.2.0`): simple; any transitive-dependency hijack on PyPI could slip malicious code into the runtime. Low probability given twine's small transitive graph and PyPI's Sigstore attestations on modern releases.
-- **B — `--require-hashes` with a vendored `python/constraints/publish-requirements.txt`**: each direct + transitive dep pinned to a SHA-256 hash; `pip install --require-hashes -r python/constraints/publish-requirements.txt` refuses to install anything not in the file. Requires periodic regeneration via `pip-compile --generate-hashes`; drift is failure-closed (install errors if any hash mismatches) but has an operational cost.
+Reasoning retained for audit:
+- **A — version pin only** (locked): simple; any transitive-dependency hijack on PyPI could slip malicious code into the runtime. Low probability given twine's small transitive graph and PyPI's Sigstore attestations on modern releases.
+- **B — `--require-hashes` with a vendored `python/constraints/publish-requirements.txt`** (deferred): each direct + transitive dep pinned to a SHA-256 hash; refuses to install anything not in the file. Requires periodic regeneration via `pip-compile --generate-hashes`; drift is failure-closed but has an operational cost.
 
 ### Pre-upload check
 
@@ -218,18 +253,21 @@ TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/ \
 - `--disable-progress-bar` — avoids TTY-shaped output in the CI log.
 - Working directory: `python` (already set at the workflow job level via `defaults.run.working-directory: python`). Dist glob is therefore `dist/*`, resolving to `python/dist/*` from the repo root — matches where `python -m build` writes its outputs.
 
-### `--skip-existing` decision
+### `--skip-existing` — LOCKED per 8.2 = A
 
-See Section 8 question 2. Two options:
+**Locked: omit `--skip-existing`.** Duplicate-version upload fails hard with twine exit code 1 and PyPI HTTP 400. Recovery is an explicit version bump. Silent-skip would hide real version-bump bugs.
 
-- **A — omit `--skip-existing`**: duplicate-version upload fails hard with twine exit code 1 and PyPI HTTP 400. Safe default: the job won't silently no-op if a tag is cut twice against the same version. Recovery is an explicit version bump.
-- **B — include `--skip-existing`**: twine silently succeeds if the version already exists on PyPI. Enables idempotent retries (useful if the upload partially failed and the runner was retried). Hides version-bump bugs.
+Reasoning retained for audit:
+- **A — omit** (locked): fail-hard on duplicate; forces operator to bump version rather than silently no-op.
+- **B — include** (rejected): idempotent retries; hides state confusion.
 
 ---
 
-## 4. Attestation / sigstore — Marc decision required
+## 4. Attestation / sigstore — LOCKED per 8.1 = A
 
-**This section presents both options neutrally. Marc decides in Section 8.**
+**Locked: ship without PEP 740 attestations initially.** Sigstore attestations are tracked as a separate fast-follow arc (backlog item). Reasoning from both options retained below for audit — the original option comparison drove the locked decision and is preserved as design evidence.
+
+**Narrative-mismatch note (do not forget):** The Veil's product pitch is cryptographically-verifiable provenance for AI inference. Shipping Python SDK without PEP 740 attestations is a thematic off-key. The TS SDK has npm auto-provenance; the Python SDK must reach PEP 740 parity before the post-Clario customer engagement cycle widens. File a GitHub issue for the sigstore follow-up arc when this arc merges, and reference this note so it doesn't get forgotten.
 
 ### Background
 
@@ -286,23 +324,22 @@ PyPI then exposes the attestations on a `<dist>.provenance` URL and a `data-prov
 
 **Unlikely but specific failure mode:** sigstore is rate-limited; a tag push storm (shouldn't happen for us) would hit it. Mitigation: none needed at our volume.
 
-### Recommendation (Marc decides)
+### Locked rationale (A)
 
-**Recommend Option A for the initial landing, with Option B as a fast-follow (separate PR after this arc merges).**
+The locked decision (A) was chosen for the following reasons, preserved here as the audit trail:
 
-Rationale:
 - Option A ships the security fix (issue #19) immediately with minimum change. Smaller diff, simpler review, fewer moving parts on the first smoke test.
-- The attestation-narrative mismatch is real but mitigable: in the Option A → Option B fast-follow (which is a trivial add, not a rewrite), we land attestations within days, not with this arc.
-- Shipping sigstore on the first smoke test adds a second failure axis. If the smoke test breaks (Section 6), we'd have to diagnose "was it the OIDC flow or the sigstore integration?" Option A localizes the smoke-test failure space to the OIDC flow.
-- The TS and Go SDKs are already proving the OIDC pattern; Python smoke-testing OIDC alone is analogous.
-
-However, this is a pitch-alignment question as much as a technical one, and it's Marc's call.
+- The attestation-narrative mismatch is real but mitigable via the Option A → Option B fast-follow arc (trivial add, not a rewrite); attestations land within the following arc cycle.
+- Shipping sigstore on the first smoke test would add a second failure axis. If the smoke test breaks (Section 6), the operator would have to diagnose "was it the OIDC flow or the sigstore integration?" Option A localizes the smoke-test failure space to the OIDC flow alone.
+- The TS and Go SDKs are already proving the OIDC pattern; the Python smoke-testing of OIDC alone is analogous.
 
 ---
 
 ## 5. Failure modes and recovery
 
-The custom flow has fewer failure surfaces than the current action (no Docker pull, no attestation generation unless Option B), so the enumeration is short.
+The custom flow has fewer failure surfaces than the current action (no Docker pull, no attestation generation — per decision 8.1 = A), so the enumeration is short.
+
+**Two-step structure consequence (per 8.5 = B locked):** 5.1, 5.2, 5.3, 5.4 are Step A failures — they surface as step-level `::error::` annotations on the "Mint PyPI token via OIDC" step in the Actions UI. 5.6, 5.7 are Step B failures — they surface on the "twine check + upload" step. 5.5 may affect either step. This clean split is the operational reason 8.5 was overridden to B: a red marker on Step A tells the operator "OIDC / trusted-publisher problem", a red marker on Step B tells them "build artefact or PyPI upload problem" — without the operator having to parse step logs to distinguish.
 
 ### 5.1 — OIDC audience discovery fails
 
@@ -404,67 +441,80 @@ This arc does NOT:
 
 ---
 
-## 8. Open questions for Marc (explicit decision list)
+## 8. Decisions (locked)
 
-Each decision must be answered before Phase 2 (implementation) begins. Defaults in parentheses are my recommendations; Marc overrides.
+All 7 decisions are locked. Detailed reasoning preserved below for audit purposes. Summary table lives at the top of the document.
 
-### 8.1 — Attestation decision
+### 8.1 — Attestation decision — **LOCKED: A**
 
 **Option A** (no attestations initially, fast-follow separate arc) **vs. Option B** (sigstore attestations in this arc).
 
-*My recommendation: A — ship the OIDC security fix with minimum diff, attestations as a follow-up arc within days.*
+**Locked: A — accept attestation loss for the initial landing.** Sigstore attestations are a **tracked backlog item** under a separate fast-follow arc. The Python SDK will land on PyPI without PEP 740 attestations until that arc ships.
 
-### 8.2 — `--skip-existing` behavior
+**Narrative-mismatch note (explicit so it doesn't get forgotten):** The Veil's product pitch is cryptographically-verifiable provenance for AI inference. Shipping the Python SDK without PEP 740 attestations is a thematic off-key. The TS SDK on npm already has provenance attestations via npm's trusted-publisher auto-provenance; the Python SDK should reach parity before the post-Clario customer engagement cycle widens. **Backlog item: open a GitHub issue for the sigstore follow-up arc after this arc merges, referencing this locked-decision note.**
+
+*Original design recommendation: A. No override.*
+
+### 8.2 — `--skip-existing` behavior — **LOCKED: A**
 
 **A** (omit `--skip-existing`, duplicate-version upload fails hard) **vs. B** (include `--skip-existing`, idempotent retries).
 
-*My recommendation: A — fail-hard on duplicate version. Retries are rare; hiding them masks real bugs.*
+**Locked: A — omit the flag.** Duplicate-version upload fails hard with twine exit code 1 and PyPI HTTP 400. Silent-skip hides state confusion on retries and masks real version-bump bugs.
 
-### 8.3 — twine hash-pinning
+*Original design recommendation: A. No override.*
+
+### 8.3 — twine hash-pinning — **LOCKED: A**
 
 **A** (version pin only: `twine==6.2.0`) **vs. B** (`--require-hashes` with a constraints file).
 
-*My recommendation: A for the initial landing, revisit as a follow-up if supply-chain hygiene becomes a stated policy across all three SDKs. Rationale: hash-pinning requires a constraints-file regeneration discipline we don't yet have for any other SDK's CI; introducing it here alone creates drift. Better to add it uniformly later, or not at all.*
+**Locked: A — version pin only, `twine==6.2.0`, no constraints file, no `--require-hashes`.** Hash-pinning is filed as a **hardening backlog item alongside Dependabot enablement** — both are cross-cutting supply-chain improvements that should land uniformly across all three SDKs' CI workflows, not just this one.
 
-### 8.4 — Smoke-test version and real change pairing
+*Original design recommendation: A. No override.*
 
-What real change pairs with the `python/v0.1.1` version bump?
+### 8.4 — Smoke-test version and real change pairing — **LOCKED: (a)**
 
-**(a)** Add `python/SECURITY.md` documenting attestation status.
-**(b)** Bump `pytest>=8.0` to the current stable minor in dev extras.
-**(c)** Add a docstring to one public Python SDK entry point that lacks one.
-**(d)** Something else Marc proposes.
+**Locked: (a) — add `python/SECURITY.md`.** Real content (not a cosmetic version bump), long-term useful documentation, and references Clario security posture. Gives CISOs a document to point at during the post-Clario customer engagement cycle. Aligns with the arc's theme.
 
-*My recommendation: (a). Aligns with the arc's theme (publishing hardening + cryptographic provenance), gives CISOs a document to point at, costs one file to write.*
+Options considered:
+- **(a)** `python/SECURITY.md` documenting attestation status. ✓ LOCKED.
+- (b) Bump `pytest>=8.0` to the current stable minor in dev extras.
+- (c) Add a docstring to one public Python SDK entry point that lacks one.
+- (d) Something else.
 
-### 8.5 — (surfaced during design) — Collapse or split mint-and-upload steps?
+*Original design recommendation: (a). No override.*
 
-Should the OIDC mint and the twine upload run in a single bash step (token never written to `$GITHUB_OUTPUT`, held only in a shell variable), or split into two steps (mint-step produces a masked output; upload-step consumes it)?
+### 8.5 — Single vs split mint-and-upload steps — **LOCKED: B (OVERRIDDEN from design recommendation A)**
 
-**A — single step** (recommended): minimizes token lifetime; no `$GITHUB_OUTPUT` touched; simplest log trace.
-**B — two steps**: marginally cleaner in the log (OIDC exchange and upload show as separate steps), but requires writing the token to `$GITHUB_OUTPUT` (masked via `::add-mask::`) which is slightly more surface.
+**Locked: B — two steps.** Mint step outputs masked token via `$GITHUB_OUTPUT`; upload step consumes via step-scoped `env:` block.
 
-*My recommendation: A.*
+**Marc's rationale (overriding the design's A recommendation):** split failure modes yield clearer `::error::` annotations in the Actions UI. When a smoke test fails, the operator sees immediately whether the failure was in the OIDC/trusted-publisher path (Step A) or the build-artefact/PyPI-upload path (Step B), without having to parse step logs. Acceptable trade-off: token persists in the job's step-output map for a few seconds between Step A and Step B, rather than in a bash shell variable. Masking via `::add-mask::` before the `$GITHUB_OUTPUT` write is the load-bearing safety measure; the full masking discipline is specified in Section 2.4.
 
-### 8.6 — (surfaced during design) — Explicit PyPI upload URL or default?
+**Design implications of the override (propagated through the note):**
+- Section 2.4 rewritten to specify the two-step token-handoff pattern, masking ordering invariant, and the explicit forbidden surfaces (`$GITHUB_STEP_SUMMARY`, `$GITHUB_ENV`, job-level `env:`, disk).
+- Section 5 annotated: 5.1–5.4 are Step A failures; 5.6–5.7 are Step B failures; 5.5 may affect either.
+- Phase 2 (implementation) must produce a workflow YAML with exactly two publish-related steps (beyond the existing checkout/setup/build/install) and exercise the step-scoped `env:` pattern — not a `run: |` block that performs both mint and upload inline.
 
-Hardcode `TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/` (matches the pypa action's explicit value) or rely on twine's built-in default?
+*Original design recommendation: A. Overridden to B per Marc.*
 
-*My recommendation: hardcode, for explicitness. Matches the pypa action's behavior, survives any future change to twine's default.*
+### 8.6 — Explicit PyPI upload URL or default — **LOCKED: hardcode**
 
-### 8.7 — (surfaced during design) — Retain the `environment: pypi` GitHub environment?
+**Locked: hardcode `TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/`.** Twine's default URL has shifted historically; hardcoding is self-documenting and immune to twine default changes. Matches the pypa action's explicit value in `action.yml:14`.
 
-Currently `publish-python.yml:17` declares `environment: pypi`. This is load-bearing for the trusted-publisher configuration on PyPI (the environment name is one of the verified claims). Keep.
+*Original design recommendation: hardcode. No override.*
 
-*No decision needed — keep as-is. Flagging only so Codex review doesn't misread a "cleanup" opportunity that would break OIDC.*
+### 8.7 — Retain the `environment: pypi` GitHub environment — **LOCKED: retain**
+
+**Locked: retain.** `publish-python.yml:17`'s `environment: pypi` is load-bearing for the trusted-publisher configuration on PyPI (the environment name is one of the verified claims in the JWT `sub`/`environment` fields). Phase 2 must not touch this declaration. Flagged here so Codex review doesn't misread a "cleanup" opportunity that would break OIDC.
+
+*No decision — retained as originally scoped.*
 
 ---
 
 ## Phase 2 preconditions (do not start Phase 2 until all true)
 
+- [x] Marc has answered 8.1–8.7 — all 7 decisions locked (summary at top of document; detailed reasoning in Section 8).
 - [ ] External Codex adversarial review of this design note complete with PASS verdict.
-- [ ] Marc has answered 8.1, 8.2, 8.3, 8.4 (and 8.5, 8.6 if he wants to override the recommended defaults).
 - [ ] Issue #19 still open (has not been closed by another arc in the interim).
 - [ ] PR #18 still open, not merged (closing PR #18 ahead of this arc is explicitly not allowed per the working agreements).
 
-Only after all four conditions are met does Phase 2 (YAML implementation on this branch) begin.
+Only after all remaining conditions are met does Phase 2 (YAML implementation on this branch) begin.
