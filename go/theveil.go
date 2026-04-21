@@ -318,9 +318,10 @@ func validateProxyAcceptedResponse(a *ProxyAcceptedResponse) error {
 // For a literal `null` JSON 2xx response, json.Unmarshal produces Go
 // nil — no special-case short-circuit here; json.Marshal(nil) naturally
 // returns []byte("null"), preserving the "gateway sent null" signal on
-// the resulting *ResponseValidationError.Body. This is the
-// Marc-approved fix for the "nil Body looks like SDK forgot to set it"
-// finding from PR #13's Codex round.
+// the resulting *ResponseValidationError.Body. Prevents the
+// "nil Body looks like SDK forgot to set it" ambiguity so callers can
+// distinguish an upstream null payload from an SDK oversight on every
+// diagnostic path.
 func rawBodyBytes(body any) []byte {
 	b, err := json.Marshal(body)
 	if err != nil {

@@ -110,7 +110,8 @@ func TestResponseValidationError_IsNotHTTPError(t *testing.T) {
 // emit []byte("null") (the valid JSON null literal) so the caller can
 // distinguish "gateway sent null" from "SDK forgot to populate .Body".
 // The earlier short-circuit (if body == nil, return nil) silently lost
-// that signal; this test locks the Marc-approved fix.
+// that signal; this test locks the remediation introduced in the
+// response-validation follow-up commit.
 func TestRawBodyBytes_NilReturnsJSONNullLiteral(t *testing.T) {
 	got := rawBodyBytes(nil)
 	want := []byte("null")

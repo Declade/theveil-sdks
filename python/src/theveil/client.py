@@ -442,18 +442,21 @@ def _parse_proxy_response(status: int, body: Any, raw_text: str) -> ProxyRespons
             return ProxyAcceptedResponse.model_validate(body)
         except ValidationError as exc:
             # 2xx-but-wrong-shape — dedicated validation error, not HTTP error.
-            # The ``status`` kwarg here is the real transport status; we drop
-            # it because TheVeilResponseValidationError does not model it
-            # (status was always 2xx in this branch).
-            effective_body = raw_text if body is None else body
+            # The ``isinstance(body, dict)`` guard above means ``body`` is
+            # always a dict here, so no raw-text null-fallback is needed.
             raise TheVeilResponseValidationError(
                 "Response body failed to deserialize as ProxyAcceptedResponse",
-                body=effective_body,
+                body=body,
                 cause=exc,
             ) from exc
     try:
         return ProxySyncResponse.model_validate(body)
     except ValidationError as exc:
+        # Sync branch can be reached with ``body is None`` (literal JSON
+        # null) — fall back to the raw pre-parse text so the error's
+        # ``.body`` carries the string ``"null"`` rather than Python
+        # ``None`` (which would be indistinguishable from "SDK forgot
+        # to populate the field").
         effective_body = raw_text if body is None else body
         raise TheVeilResponseValidationError(
             "Response body failed to deserialize as ProxySyncResponse",

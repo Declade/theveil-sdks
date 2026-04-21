@@ -375,6 +375,33 @@ func TestMessages_Async202_MissingRequiredFields_RaisesResponseValidation(t *tes
 	}
 }
 
+func TestMessages_LiteralNullBody_PreservesNullSignal(t *testing.T) {
+	// Mirrors TestGetCertificate_LiteralNullBody_PreservesNullSignal: a
+	// 2xx with a literal JSON null body parses to Go nil, fails required-
+	// field validation, and must surface as *ResponseValidationError with
+	// Body = []byte("null") — not nil. Callers can distinguish "gateway
+	// sent null" from "SDK forgot to populate .Body" on the Messages
+	// path as well as the GetCertificate path.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte("null"))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	resp, err := c.Messages(context.Background(), basicMessagesRequest())
+	if resp != nil {
+		t.Errorf("expected nil resp on null-body failure")
+	}
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if string(vErr.Body) != "null" {
+		t.Errorf("Body = %q, want %q", string(vErr.Body), "null")
+	}
+}
+
 func TestMessages_Non2xx_UsesHTTPErrorNotResponseValidation(t *testing.T) {
 	// Invariant: non-2xx MUST raise *HTTPError. *ResponseValidationError
 	// must never fire for transport-level failure.
