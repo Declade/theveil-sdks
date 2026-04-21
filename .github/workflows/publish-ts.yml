@@ -1,43 +1,42 @@
 name: Publish TypeScript
 
-# Trigger: tag push v* — publishes @dsaveil/theveil to npm with provenance
+# Trigger: tag push ts/v* — publishes @dsaveil/theveil to npm via OIDC
+# trusted publisher (configured on npmjs.com against this repo + this
+# workflow filename). No NPM_TOKEN secret — the publish step authenticates
+# via the GitHub Actions OIDC token, which npm matches against the
+# trusted-publisher registration.
 #
-# Placeholder only. Wired up in the SDK publishing arc.
-#
-# Intended structure (commented skeleton):
-#
-# on:
-#   push:
-#     tags:
-#       - 'v*'
-#
-# jobs:
-#   publish:
-#     runs-on: ubuntu-latest
-#     permissions:
-#       contents: read
-#       id-token: write
-#     defaults:
-#       run:
-#         working-directory: ts
-#     steps:
-#       - uses: actions/checkout@v4
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: '20'
-#           registry-url: 'https://registry.npmjs.org'
-#       - run: npm ci
-#       - run: npm run build
-#       - run: npm publish --provenance --access public
-#         env:
-#           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+# Provenance attestation is added automatically by npm when publishing
+# via trusted publisher; do NOT pass --provenance on the CLI (it's
+# auto-enabled and passing it explicitly with OIDC creates confusing
+# dual-attestation behaviour).
 
 on:
+  push:
+    tags:
+      - 'ts/v*'
   workflow_dispatch:
 
 jobs:
-  placeholder:
+  publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for npm trusted publisher (OIDC)
+      contents: read
+    defaults:
+      run:
+        working-directory: ts
     steps:
-      - name: Placeholder
-        run: echo "publish-ts placeholder — wired up in SDK publishing arc"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Upgrade npm to latest (OIDC support requires >=11.5.1)
+        run: npm install -g npm@latest
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Publish to npm
+        run: npm publish --access public
