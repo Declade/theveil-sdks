@@ -244,11 +244,12 @@ Requires Python >= 3.9; our workflow already pins `python-version: '3.12'` via `
 ### Install mechanics
 
 ```bash
-python -m pip install --upgrade pip
 python -m pip install 'twine==6.2.0'
 ```
 
 This install inherits the trust model of the PyPI registry itself. If an attacker controls DNS for `pypi.org` or a configured upstream mirror, the impact is ecosystem-wide rather than unique to this workflow. That risk is accepted here; this arc does not introduce a one-off mirror trust exception.
+
+**pip version — deliberate trust-surface choice.** The design relies on the pip version bundled with the runner's Python 3.12 from `actions/setup-python` and does **not** run `pip install --upgrade pip` beforehand. Rationale: upgrading pip would introduce a second unpinned trust anchor (the latest pip resolved fresh from PyPI at workflow runtime) that Section 1's before/after table does not enumerate. The bundled pip is adequate for `pip install twine==6.2.0`; if it ever becomes inadequate, the failure surfaces as a diagnosable CI error, not a silent supply-chain risk. Accordingly, Section 1's "After" trust-anchor table intentionally does not list pip — it is the runner-bundled pip, not a directly-pinned anchor of this workflow.
 
 **Hash-pinning — LOCKED per 8.3 = A:** version pin only (`twine==6.2.0`), no constraints file, no `--require-hashes`. Hash-pinning is tracked as a hardening backlog item alongside Dependabot enablement — both land uniformly across all three SDKs' CI workflows in a later arc, not just this one.
 
@@ -463,13 +464,22 @@ The `python/SECURITY.md` addition is the required real change from locked decisi
 
 ### Rollback path
 
-If the custom flow breaks OIDC publish on the smoke test:
-1. The failure is observable within ~30s of the tag push (the OIDC exchange step runs early).
-2. **Do not** attempt in-workflow fixes during the failing run. Cancel if still running.
-3. **Rollback target:** revert to the merge commit SHA of PR #18 (TBD once PR #18 merges). Specifically, restore the single-line `- uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b` step that PR #18 leaves in place.
-4. The rollback is a single commit revert against the eventual Phase 2 merge, not a restoration from memory. A new tag `python/v0.1.2` cut from that revert commit recovers publishing.
-5. `v0.1.1` remains broken on PyPI in whatever state it reached (probably "version reserved but no dists published", which is recoverable: the name stays reserved to us and `v0.1.2` supersedes without conflict).
-6. Post-mortem diagnoses which step failed. The OIDC mint step is the highest-risk spot — if PyPI returns 403 with a specific `errors[].code`, the trusted-publisher config likely needs re-verification against the new workflow filename.
+**Rollback.** If the custom flow fails in production after Phase 2 merges, the rollback is a single `git revert` against the Phase 2 merge commit on `main`. This restores the pre-custom state where `pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b` remains the publish step (as landed by PR #18).
+
+The Phase 2 merge SHA is not known at design time. Once Phase 2 merges, the SHA will be recorded inline in this section.
+
+Recovery sequence:
+
+1. The failure is observable within ~30s of the tag push (the OIDC exchange step runs early). **Do not** attempt in-workflow fixes during the failing run. Cancel if still running.
+2. `git checkout main && git pull`
+3. `git revert <Phase 2 merge SHA>`
+4. Push the revert commit (via PR if branch protection requires, or direct push otherwise).
+5. Bump `python/pyproject.toml` to the next patch version (e.g., `python/v0.1.3` if the failed publish was `0.1.2`).
+6. Tag and push the new version; `pypa/gh-action-pypi-publish` handles the publish on the restored, PR-#18-validated path.
+7. `v0.1.1` (or whichever version failed under the custom flow) remains broken on PyPI in whatever state it reached — typically "version reserved but no dists published" — which is recoverable because the name stays reserved to us and the next patch version supersedes without conflict.
+8. Post-mortem diagnoses which step failed on a separate branch. The OIDC mint step is the highest-risk spot — if PyPI returns 403 with a specific `errors[].code`, the trusted-publisher config likely needs re-verification against the new workflow filename.
+
+This returns the publish path to the state validated by PR #18 while a diagnosis of the custom flow failure happens on a separate branch.
 
 ---
 
