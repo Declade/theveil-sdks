@@ -1,6 +1,6 @@
 # Custom PyPI OIDC + twine publish — design note
 
-**Status:** Phase 1 design locked. Awaits external Codex review before Phase 2 (implementation).
+**Status:** Phase 1 design locked. Awaits external Codex re-review before Phase 2 (implementation).
 **Scope:** Python SDK (`theveil` on PyPI) publish workflow only. Does not touch `publish-ts.yml` or `publish-go.yml`.
 **Supersedes:** `.github/workflows/publish-python.yml`'s `- uses: pypa/gh-action-pypi-publish@<sha>` step only. Everything else in that workflow (trigger pattern, environment, permissions, build step) is retained.
 **Branch:** `arc/custom-pypi-oidc-publish` off `main` at `971066e`.
@@ -13,7 +13,7 @@ All 7 decisions from Section 8 are locked. Summary for quick reference; detailed
 
 | # | Topic | Locked choice |
 |---|---|---|
-| 8.1 | Attestations | **A** — accept attestation loss; sigstore attestations as separate fast-follow arc (backlog-tracked, narrative-mismatch note retained so it doesn't get forgotten) |
+| 8.1 | Attestations | **A** — accept attestation loss; sigstore attestations as separate fast-follow arc, now tracked by issue #20 |
 | 8.2 | `--skip-existing` | **A** — omit the flag; duplicate-version upload fails hard |
 | 8.3 | twine hash-pinning | **A** — version pin only (`twine==6.2.0`); `--require-hashes` filed as hardening backlog item alongside Dependabot |
 | 8.4 | Smoke-test change pairing | **(a)** — add `python/SECURITY.md`, referencing Clario security posture |
@@ -51,7 +51,7 @@ For external consumers (us), `repo_id != REPO_ID_GH_ACTION` (178055147), so the 
 - `twine` (the actual upload library — still a dependency, now installed directly via `pip` into the job runtime).
 - `curl` (used for the OIDC exchange — pre-installed on `ubuntu-latest`).
 - `jq` (used to parse JSON responses — pre-installed on `ubuntu-latest`).
-- The PyPI registry endpoints (`/_/oidc/audience`, `/_/oidc/mint-token`, `upload.pypi.org/legacy/`) — these are first-party PyPI infrastructure; we depend on them regardless of which client does the upload.
+- The PyPI registry endpoints (`/_/oidc/mint-token`, `upload.pypi.org/legacy/`) — these are first-party PyPI infrastructure; we depend on them regardless of which client does the upload.
 - GitHub's OIDC endpoint (`$ACTIONS_ID_TOKEN_REQUEST_URL`) — first-party GitHub infrastructure.
 - `actions/setup-python` — still needed to bring a pinned CPython + pip into the job. Already SHA-pinned by PR #18.
 
@@ -69,17 +69,42 @@ For external consumers (us), `repo_id != REPO_ID_GH_ACTION` (178055147), so the 
 
 **After** (Option A, no attestations — recommended):
 
-| Artifact | Pin form | Trust anchor |
+Resolved in an isolated venv on 2026-04-21 with `pip install twine==6.2.0`; only `twine` itself is directly pinned. Every transitive package below resolves fresh from PyPI at workflow runtime and is therefore a trust anchor without hash pinning (per locked decision 8.3).
+
+| Artifact | Version / resolution mode | Trust anchor |
 |---|---|---|
-| `twine==6.2.0` | Version pin (optionally `--require-hashes`) | PyPI with TUF metadata (PEP 458 once enabled) |
-| `curl` | Pre-installed on runner, GitHub-maintained | GitHub Actions runner image |
-| `jq` | Pre-installed on runner, GitHub-maintained | GitHub Actions runner image |
+| `twine` | `6.2.0` direct version pin | PyPI at workflow runtime; direct dependency is version-pinned, not hash-pinned |
+| `readme-renderer` | `44.0` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `nh3` | `0.3.4` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `docutils` | `0.22.4` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `Pygments` | `2.20.0` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `requests` | `2.33.1` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `charset-normalizer` | `3.4.7` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `idna` | `3.11` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `urllib3` | `2.6.3` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `certifi` | `2026.2.25` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `requests-toolbelt` | `1.0.0` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `keyring` | `25.7.0` observed 2026-04-21 on the GitHub-hosted x86_64 runner path; conditional transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `jaraco.classes` | `3.4.0` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `jaraco.functools` | `4.4.0` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `jaraco.context` | `6.1.2` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `more-itertools` | `11.0.2` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `rfc3986` | `2.0.0` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `rich` | `15.0.0` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `markdown-it-py` | `4.0.0` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `mdurl` | `0.1.2` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `packaging` | `26.1` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `id` | `1.6.1` observed 2026-04-21; transitive fresh resolve | PyPI at workflow runtime; transitive dependency, not hash-pinned |
+| `curl` | Pre-installed on runner | GitHub Actions runner image |
+| `jq` | Pre-installed on runner | GitHub Actions runner image |
 | PyPI endpoints | First-party | PyPI |
 | GitHub OIDC endpoint | First-party | GitHub |
 
-**Net verdict:** strictly smaller surface. Eliminates one mutable Docker tag on GHCR and one transitive Docker Hub base-image tag. The remaining dependencies are either explicitly pinned to PyPI-resolved artifacts (twine) or pre-baked into the GitHub runner (curl, jq). No new external trust anchors are introduced.
+The `pip install twine==6.2.0` step resolves transitive dependencies from PyPI at workflow runtime. Each resolution is a trust anchor; none are hash-pinned (per locked decision 8.3).
 
-**After** (Option B, with sigstore attestations): adds `sigstore==<pinned>` and `pypi-attestations==<pinned>` as new PyPI-installed dependencies. Still smaller than today — one mutable Docker tag + one mutable base-image tag are swapped for two PyPI-pinned packages — but nonzero additive surface versus Option A.
+**Net verdict:** smaller in the targeted dimension addressed by issue #19: the mutable GHCR Docker reference is eliminated, along with the action image's transitive mutable Docker base-image dependency. The replacement introduces a new mutable runtime surface because `pip install twine==6.2.0` resolves a transitive dependency tree at workflow runtime. The trade-off is still favorable because the removed surface is a single mutable Docker tag with high blast radius, while the added surface is bounded to the `pip install` step and inherits the same trust model already accepted across Python package installation generally.
+
+**After** (Option B, with sigstore attestations): adds `sigstore==<pinned>` and `pypi-attestations==<pinned>` on top of Option A's runtime-resolved tree. It still removes the mutable container indirection addressed by issue #19, but increases the PyPI-resolved runtime surface versus Option A.
 
 ---
 
@@ -87,27 +112,11 @@ For external consumers (us), `repo_id != REPO_ID_GH_ACTION` (178055147), so the 
 
 Reference: `pypa/gh-action-pypi-publish@cef22109.../oidc-exchange.py`. The flow below is a faithful replication of that script's behavior in bash, with explicit field names and HTTP mechanics.
 
-### Step 2.1 — Discover audience
+### Step 2.1 — Why this design does NOT do audience discovery
 
-PyPI publishes its expected OIDC audience string at a well-known endpoint. We fetch it rather than hardcoding so we automatically track any future PyPI audience rotation.
+PyPI's Trusted Publishing docs explicitly show `audience=pypi` for PyPI and reserve `/_/oidc/audience` for cases where a client needs to support multiple indices such as PyPI plus TestPyPI. This design is PyPI-only and already hardcodes `https://upload.pypi.org/legacy/` per locked decision 8.6, so a discovery call would add an extra HTTP round-trip without changing the chosen audience. The normative behavior in this design is therefore: **hardcode `audience=pypi`; do not call `GET https://pypi.org/_/oidc/audience` during the workflow.**
 
-```
-GET https://pypi.org/_/oidc/audience
-Accept: application/json
-```
-
-**Expected response** (HTTP 200, JSON):
-
-```json
-{"audience": "pypi"}
-```
-
-**Failure modes:**
-- **404** — index does not support OIDC trusted publishing. Should never happen on `pypi.org`; if it does, PyPI infrastructure is broken. Fail hard with `::error::`.
-- **403** — trusted publishing is disabled for this repo. Fail hard with guidance to re-verify the trusted-publisher configuration on PyPI.
-- **5xx** — PyPI maintenance or outage. Fail hard, log `status.python.org`.
-- **Missing `audience` field** — malformed response. Fail hard.
-- **Timeout (>10s)** — fail hard; do not retry (PyPI outages are typically on-the-order-of minutes, retry-in-workflow adds no value).
+Reference: <https://docs.pypi.org/trusted-publishers/using-a-publisher/>
 
 ### Step 2.2 — Request GitHub OIDC JWT
 
@@ -174,7 +183,7 @@ The minted token is a standard PyPI API token (prefix `pypi-`). Lifetime per PyP
 
 The workflow is split across two distinct steps (per 8.5 = B):
 
-- **Step A (mint):** performs 2.1 → 2.3; at the end, masks the minted token and writes it to the step's output. Upload artefacts are NOT touched in this step.
+- **Step A (mint):** performs 2.2 → 2.3; at the end, masks the minted token and writes it to the step's output. Upload artefacts are NOT touched in this step.
 - **Step B (upload):** consumes the token from Step A's output into its step-scoped `env:` block, runs `twine check` + `twine upload`, exits.
 
 **Token masking — ordering invariant:**
@@ -203,15 +212,32 @@ printf 'token=%s\n' "$PYPI_TOKEN" >> "$GITHUB_OUTPUT"
 - Token is NEVER passed to any step other than Step B (upload).
 - Step B's `env:` block for `TWINE_PASSWORD` is scoped to that step's `run:` only, never to the job.
 
+### Step 2.4.1 — Shell tracing prohibition
+
+Any step that references the minted token MUST NOT enable shell tracing. Specifically:
+
+- MUST NOT use `set -x`
+- MUST NOT use `set -v`
+- MUST NOT use `bash -x`
+- MUST NOT use `sh -x`
+- Step-level `shell: bash` is permitted; `shell: bash -x` or equivalent is prohibited
+- If debugging is needed, add step-specific `echo` statements with explicit variable names and safe redactions, never global tracing
+
 **Trade-off accepted (per 8.5 override):** two-step split means the token persists in the job's step-output map for the lifetime of the job (several seconds between Step A and Step B). The single-step alternative would have held the token in a bash shell variable for a shorter lifetime. Marc's override prioritizes operator debuggability (Step A failure surfaces distinct from Step B failure in the Actions UI) over the marginally-shorter token lifetime. Codex should flag if the job-level step-output exposure is larger than expected — but under current GitHub Actions runner semantics, a masked step output is scrubbed consistently and cannot be exfiltrated by a later step unless that step explicitly writes the token to a new surface, which this design forbids.
 
 ---
 
 ## 3. twine invocation
 
+Path convention for this section: all distribution artifact references are written explicitly as `python/dist/*`. Phase 2 must preserve that explicit artifact selection even if a step inherits `working-directory: python`, by overriding or compensating locally rather than reverting the design note back to `dist/*`.
+
+This design relies on GitHub-hosted runners being ephemeral, so `python/dist/` is assumed to start fresh on each run and no explicit `rm -rf python/dist/` step is specified. Self-hosted runner workspace hygiene is out of scope for this arc.
+
 ### Version pin
 
 **twine 6.2.0** (latest stable at design time, 2026-04-21; verified via `curl https://pypi.org/pypi/twine/json | jq -r .info.version`).
+
+`twine 6.2.0` was released on 2025-09-04, roughly 7 months before this design, and is still the current latest stable release per live PyPI JSON. Twine's release cadence is slow; age alone is not a red flag here.
 
 Requires Python >= 3.9; our workflow already pins `python-version: '3.12'` via `actions/setup-python`, so the Python requirement is trivially satisfied.
 
@@ -221,6 +247,8 @@ Requires Python >= 3.9; our workflow already pins `python-version: '3.12'` via `
 python -m pip install --upgrade pip
 python -m pip install 'twine==6.2.0'
 ```
+
+This install inherits the trust model of the PyPI registry itself. If an attacker controls DNS for `pypi.org` or a configured upstream mirror, the impact is ecosystem-wide rather than unique to this workflow. That risk is accepted here; this arc does not introduce a one-off mirror trust exception.
 
 **Hash-pinning — LOCKED per 8.3 = A:** version pin only (`twine==6.2.0`), no constraints file, no `--require-hashes`. Hash-pinning is tracked as a hardening backlog item alongside Dependabot enablement — both land uniformly across all three SDKs' CI workflows in a later arc, not just this one.
 
@@ -251,7 +279,7 @@ TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/ \
 - `TWINE_REPOSITORY_URL=https://upload.pypi.org/legacy/` — explicit PyPI upload endpoint. Matches the default in `pypa/gh-action-pypi-publish/action.yml:14`.
 - `--non-interactive` — never prompt; any auth failure exits non-zero instead of hanging.
 - `--disable-progress-bar` — avoids TTY-shaped output in the CI log.
-- Working directory: `python` (already set at the workflow job level via `defaults.run.working-directory: python`). Dist glob is therefore `dist/*`, resolving to `python/dist/*` from the repo root — matches where `python -m build` writes its outputs.
+- Artifact selection is always written as `python/dist/*` in this design note, even where the eventual workflow step may inherit `working-directory: python`.
 
 ### `--skip-existing` — LOCKED per 8.2 = A
 
@@ -265,9 +293,9 @@ Reasoning retained for audit:
 
 ## 4. Attestation / sigstore — LOCKED per 8.1 = A
 
-**Locked: ship without PEP 740 attestations initially.** Sigstore attestations are tracked as a separate fast-follow arc (backlog item). Reasoning from both options retained below for audit — the original option comparison drove the locked decision and is preserved as design evidence.
+**Locked: ship without PEP 740 attestations initially.** Sigstore attestations are tracked as a separate fast-follow arc in issue #20. Reasoning from both options retained below for audit — the original option comparison drove the locked decision and is preserved as design evidence.
 
-**Narrative-mismatch note (do not forget):** The Veil's product pitch is cryptographically-verifiable provenance for AI inference. Shipping Python SDK without PEP 740 attestations is a thematic off-key. The TS SDK has npm auto-provenance; the Python SDK must reach PEP 740 parity before the post-Clario customer engagement cycle widens. File a GitHub issue for the sigstore follow-up arc when this arc merges, and reference this note so it doesn't get forgotten.
+**Narrative-mismatch note (do not forget):** The Veil's product pitch is cryptographically-verifiable provenance for AI inference. Shipping Python SDK without PEP 740 attestations is a thematic off-key. The TS SDK has npm auto-provenance; the Python SDK must reach PEP 740 parity before the post-Clario customer engagement cycle widens. That fast-follow is now tracked by issue #20 and scheduled for the post-Clario hardening sprint.
 
 ### Background
 
@@ -294,13 +322,17 @@ PyPI then exposes the attestations on a `<dist>.provenance` URL and a `data-prov
 - Trusted Publishing (OIDC-minted tokens) still used — unchanged from today.
 - Users can still verify package origin via PyPI's existing metadata (PEP 458 once PyPI enables it, PyPI's own account-level signing, etc.).
 - The package is still legitimately ours — there is no authenticity loss, only loss of the cryptographic *attestation* artifact that a third-party verifier can check offline.
+- The PyPI package page will not display the "signed" badge that PEP 740 attestations trigger.
+- Consumers who explicitly check PyPI provenance or badge state MAY see that absence as unexpected.
 
 **Impact on The Veil's pitch:** The Veil's product narrative is cryptographically-verifiable provenance for AI inference. Shipping our Python SDK *without* a cryptographic provenance attestation is thematically off-key. Any customer who inspects our package on PyPI and notices the absence of a provenance badge (which PyPI shows when attestations are present) would have a legitimate question. However:
 - The TS SDK on npm already publishes with provenance attestations (automatic via npm trusted publishing, PR #16).
 - The Go SDK has no equivalent attestation mechanism on the Go proxy — there's nothing to lose.
 - So the gap is Python-only, and only until Option B is landed.
 
-**Effort to revisit:** Low. Adding sigstore signing to the custom flow is a separable arc (install sigstore + pypi-attestations, run `python -m sigstore sign` or call the pypi-attestations API, pass `--attestations` to twine). No design refactor needed.
+**User-visible disclosure:** the smoke-test-paired `python/SECURITY.md` file from locked decision 8.4 will include a line stating that Python SDK publishes currently ship without PEP 740 attestations and linking to issue #20. That is the only intended user-visible disclosure. PyPI provides no upload-time mechanism to mark attestation absence as intentional.
+
+**Effort to revisit:** Low. Adding sigstore signing to the custom flow is a separable arc (install sigstore + pypi-attestations, run `python -m sigstore sign` or call the pypi-attestations API, pass `--attestations` to twine). No design refactor needed; issue #20 is the tracking handle.
 
 ### Option B — Add explicit sigstore signing now
 
@@ -339,26 +371,47 @@ The locked decision (A) was chosen for the following reasons, preserved here as 
 
 The custom flow has fewer failure surfaces than the current action (no Docker pull, no attestation generation — per decision 8.1 = A), so the enumeration is short.
 
-**Two-step structure consequence (per 8.5 = B locked):** 5.1, 5.2, 5.3, 5.4 are Step A failures — they surface as step-level `::error::` annotations on the "Mint PyPI token via OIDC" step in the Actions UI. 5.6, 5.7 are Step B failures — they surface on the "twine check + upload" step. 5.5 may affect either step. This clean split is the operational reason 8.5 was overridden to B: a red marker on Step A tells the operator "OIDC / trusted-publisher problem", a red marker on Step B tells them "build artefact or PyPI upload problem" — without the operator having to parse step logs to distinguish.
+**Two-step structure consequence (per 8.5 = B locked):** 5.0 and 5.0.1 are pre-publish prerequisite failures. 5.1, 5.2, 5.3, 5.3.1, and 5.4 are Step A failures — they surface as step-level `::error::` annotations on the "Mint PyPI token via OIDC" step in the Actions UI. 5.6 and 5.7 are Step B failures — they surface on the "twine check + upload" step. 5.5 may affect either step. This clean split is the operational reason 8.5 was overridden to B: a red marker on Step A tells the operator "OIDC / trusted-publisher problem", a red marker on Step B tells them "build artefact or PyPI upload problem" — without the operator having to parse step logs to distinguish.
 
-### 5.1 — OIDC audience discovery fails
+### 5.0 — `twine` install failure
 
-- **Observable:** `curl` exits non-zero, or response body is not JSON, or `.audience` field is missing/null.
-- **Log:** `::error::PyPI OIDC audience discovery failed: <http-status> <body-excerpt>`.
-- **Recovery:** job halts. Recovery requires PyPI-side fix (if their endpoint is down) or workflow re-run (if transient).
-- **Does NOT** fall back to a hardcoded audience — PyPI's stated contract is that the audience is discoverable at `/_/oidc/audience`, and silently accepting an assumed value would mask a real configuration drift.
+- **Observable:** `python -m pip install 'twine==6.2.0'` exits non-zero.
+- **Common causes:** PyPI transient 5xx, DNS failure, stale pip cache, conflicting transitive dependency resolution.
+- **Log:** pip's native error output plus `::error::Failed to install twine==6.2.0; see pip output above`.
+- **Recovery:** fail hard; upstream workflow re-run is the recovery path.
+- **Retry policy:** no workflow-level retry. pip already performs its own internal retries; adding an outer retry risks masking a systemic issue.
 
-### 5.2 — GitHub OIDC JWT request fails
+### 5.0.1 — Build failure
 
-- **Observable:** `curl` exits non-zero, or response body has no `.value` field, or `.value` is null.
+- **Observable:** `python -m build` exits non-zero; `python/dist/` is empty or incomplete.
+- **Log:** the build tool's native output plus `::error::Build failed; python/dist/ will not be uploaded`.
+- **Recovery:** fail hard; downstream `twine check` and `twine upload` steps do not execute.
+- **Pytest retention:** the existing `pytest` step MUST pass before build runs. If `pytest` fails, build does not run.
+
+### 5.1 — GitHub OIDC JWT request fails
+
+- **Observable:** `curl` exits non-zero, or GitHub returns HTTP non-2xx, or response body has no `.value` field, or `.value` is null.
 - **Log:** `::error::GitHub OIDC token request failed: <http-status> <body-excerpt>` plus a reminder that `id-token: write` must be granted at the job level and that fork-PR triggers are disallowed.
 - **Recovery:** job halts. Most common cause: accidental removal of `id-token: write`. Fork-PR case is already handled by our trigger pattern (`tags: ['python/v*']`, `workflow_dispatch`) — forks cannot push tags to our repo, so this path is unreachable for external PRs.
 
-### 5.3 — PyPI token mint returns 403
+### 5.2 — PyPI token mint returns 403
 
 - **Observable:** HTTP 403 from `/_/oidc/mint-token`. Response body is JSON of shape `{"errors": [{"code": "...", "description": "..."}]}`.
 - **Log:** `::error::PyPI token mint refused:` followed by each error's code + description + the claims extracted from the JWT payload (decoded from base64), so the operator can compare against the trusted-publisher configuration on PyPI.
 - **Recovery:** job halts. Recovery requires updating the trusted-publisher configuration on `https://pypi.org/manage/project/theveil/settings/publishing/` to match the current workflow's claims (owner, repository, workflow filename, environment).
+
+### 5.3 — PyPI token mint returns 4xx/5xx other than 403
+
+- **Observable:** HTTP 422 or 5xx from `/_/oidc/mint-token`.
+- **Log:** `::error::PyPI token mint failed: status=<N> body-head=<first-500-chars>`.
+- **Recovery:** fail hard. HTTP 422 signals a request-construction bug; 5xx signals PyPI outage. Upstream tag re-push or manual workflow re-run is the only recovery after the underlying cause is understood.
+
+### 5.3.1 — Mint POST transport failure
+
+- **Observable:** `curl` exit code is non-zero before any HTTP status is returned. Notable codes: `6` = DNS failure, `7` = connection refused, `28` = timeout, `35` = TLS handshake failure, `56` = network receive error.
+- **Log:** `::error::PyPI mint-token transport failure: curl exited with code $EXIT_CODE`, followed by the captured `curl` stderr.
+- **Recovery:** fail hard; no automatic retry. Recovery is an upstream tag re-push or manual workflow re-run once the transport issue is resolved.
+- **Diagnostic hint:** point the operator at `status.python.org` from the workflow log before retrying.
 
 ### 5.4 — PyPI token mint returns 2xx but malformed JSON
 
@@ -404,26 +457,25 @@ Partial testing possibilities considered and rejected as insufficient:
 
 ### What version gets burned on the smoke test?
 
-**Proposal: `python/v0.1.1`** with a real, non-cosmetic change paired with the version bump. Candidates (Marc picks in Section 8 question 4):
+**Locked: `python/v0.1.1`** paired with adding `python/SECURITY.md`.
 
-- **(a) Add a `python/SECURITY.md`** documenting the PEP 740 attestation status (if Option A, note that attestations are pending; if Option B, note the sigstore signer identity and verification command).
-- **(b) Bump `pytest>=8.0` to the current stable minor** in `python/pyproject.toml`'s dev extras — verifies the dev-deps install path still works under the new CI. Minor dev-only change.
-- **(c) Add a type stub or JSDoc-equivalent docstring** to one public Python SDK entry point that currently lacks one. Zero behavioural change, doc-only.
-
-All three are real changes that justify a version bump (Marc's "real change pairing" rule from memory `project_ts_sdk_v020_npm_bootstrap.md`). None touch load-bearing runtime logic.
+The `python/SECURITY.md` addition is the required real change from locked decision 8.4. It will document the current PEP 740 attestation state, explicitly disclose the temporary absence of PyPI's "signed" badge, and link to issue #20. No alternative smoke-test pairing is in scope for this design revision.
 
 ### Rollback path
 
 If the custom flow breaks OIDC publish on the smoke test:
 1. The failure is observable within ~30s of the tag push (the OIDC exchange step runs early).
 2. **Do not** attempt in-workflow fixes during the failing run. Cancel if still running.
-3. **Hotfix branch** restores the single-line `- uses: pypa/gh-action-pypi-publish@<sha>` step, reverting the custom flow. A new tag `python/v0.1.2` cut from the hotfix commit recovers publishing.
-4. `v0.1.1` remains broken on PyPI in whatever state it reached (probably "version reserved but no dists published", which is recoverable: the name stays reserved to us and `v0.1.2` supersedes without conflict).
-5. Post-mortem diagnoses which step failed. The OIDC mint step is the highest-risk spot — if PyPI returns 403 with a specific `errors[].code`, the trusted-publisher config likely needs re-verification against the new workflow filename.
+3. **Rollback target:** revert to the merge commit SHA of PR #18 (TBD once PR #18 merges). Specifically, restore the single-line `- uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b` step that PR #18 leaves in place.
+4. The rollback is a single commit revert against the eventual Phase 2 merge, not a restoration from memory. A new tag `python/v0.1.2` cut from that revert commit recovers publishing.
+5. `v0.1.1` remains broken on PyPI in whatever state it reached (probably "version reserved but no dists published", which is recoverable: the name stays reserved to us and `v0.1.2` supersedes without conflict).
+6. Post-mortem diagnoses which step failed. The OIDC mint step is the highest-risk spot — if PyPI returns 403 with a specific `errors[].code`, the trusted-publisher config likely needs re-verification against the new workflow filename.
 
 ---
 
 ## 7. Explicit non-goals
+
+Phase 2 hard requirement: the existing `pytest` step MUST remain before build. Dropping `pytest` is out of scope; any PR that removes that step is invalid per this design.
 
 This arc does NOT:
 
@@ -434,6 +486,7 @@ This arc does NOT:
 - Change the `permissions:` block (`id-token: write` + `contents: read` retained).
 - Change the `environment: pypi` declaration (retained).
 - Change the working directory (`python` retained via `defaults.run.working-directory`).
+- Remove or bypass the existing `pytest` step before build.
 - Address Dependabot enablement (separate arc; tracked as part of the post-Clario backlog).
 - Address broader CI hardening beyond issue #19 (e.g., CodeQL, SAST, secret-scanning, merge protection) — out of scope.
 - Make the custom flow available as a reusable action or composite — inlined-only, per-SDK-workflow, no abstraction.
@@ -449,9 +502,9 @@ All 7 decisions are locked. Detailed reasoning preserved below for audit purpose
 
 **Option A** (no attestations initially, fast-follow separate arc) **vs. Option B** (sigstore attestations in this arc).
 
-**Locked: A — accept attestation loss for the initial landing.** Sigstore attestations are a **tracked backlog item** under a separate fast-follow arc. The Python SDK will land on PyPI without PEP 740 attestations until that arc ships.
+**Locked: A — accept attestation loss for the initial landing.** Sigstore attestations are tracked under fast-follow issue #20. The Python SDK will land on PyPI without PEP 740 attestations until that arc ships.
 
-**Narrative-mismatch note (explicit so it doesn't get forgotten):** The Veil's product pitch is cryptographically-verifiable provenance for AI inference. Shipping the Python SDK without PEP 740 attestations is a thematic off-key. The TS SDK on npm already has provenance attestations via npm's trusted-publisher auto-provenance; the Python SDK should reach parity before the post-Clario customer engagement cycle widens. **Backlog item: open a GitHub issue for the sigstore follow-up arc after this arc merges, referencing this locked-decision note.**
+**Narrative-mismatch note (explicit so it doesn't get forgotten):** The Veil's product pitch is cryptographically-verifiable provenance for AI inference. Shipping the Python SDK without PEP 740 attestations is a thematic off-key. The TS SDK on npm already has provenance attestations via npm's trusted-publisher auto-provenance; the Python SDK should reach parity before the post-Clario customer engagement cycle widens. **Tracked follow-up: issue #20, scheduled for the post-Clario hardening sprint.**
 
 *Original design recommendation: A. No override.*
 
@@ -475,6 +528,8 @@ All 7 decisions are locked. Detailed reasoning preserved below for audit purpose
 
 **Locked: (a) — add `python/SECURITY.md`.** Real content (not a cosmetic version bump), long-term useful documentation, and references Clario security posture. Gives CISOs a document to point at during the post-Clario customer engagement cycle. Aligns with the arc's theme.
 
+The file must include a line that explains the current absence of PEP 740 attestations on PyPI and links to issue #20.
+
 Options considered:
 - **(a)** `python/SECURITY.md` documenting attestation status. ✓ LOCKED.
 - (b) Bump `pytest>=8.0` to the current stable minor in dev extras.
@@ -491,7 +546,7 @@ Options considered:
 
 **Design implications of the override (propagated through the note):**
 - Section 2.4 rewritten to specify the two-step token-handoff pattern, masking ordering invariant, and the explicit forbidden surfaces (`$GITHUB_STEP_SUMMARY`, `$GITHUB_ENV`, job-level `env:`, disk).
-- Section 5 annotated: 5.1–5.4 are Step A failures; 5.6–5.7 are Step B failures; 5.5 may affect either.
+- Section 5 annotated: 5.0 and 5.0.1 are pre-publish prerequisite failures; 5.1–5.4 plus 5.3.1 are Step A failures; 5.6–5.7 are Step B failures; 5.5 may affect either.
 - Phase 2 (implementation) must produce a workflow YAML with exactly two publish-related steps (beyond the existing checkout/setup/build/install) and exercise the step-scoped `env:` pattern — not a `run: |` block that performs both mint and upload inline.
 
 *Original design recommendation: A. Overridden to B per Marc.*
