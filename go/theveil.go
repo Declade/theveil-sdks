@@ -306,23 +306,28 @@ func validateProxyAcceptedResponse(a *ProxyAcceptedResponse) error {
 // rawBodyBytes re-serializes the transport-parsed body back into raw
 // bytes for *ResponseValidationError.Body.
 //
-// Always round-trips through json.Marshal — no type-switch special-casing
-// for strings or []byte. The minor re-serialization cost (a non-JSON 2xx
-// body becomes a JSON-quoted string literal) is traded for fidelity:
-// callers get a single, predictable encoding on .Body regardless of
-// upstream content-type. json.Marshal of a value already produced by
-// json.Unmarshal cannot fail in practice (channels/funcs/cycles are the
-// only rejection cases, and none can originate from unmarshal of JSON),
-// so the error branch is defensive-dead but kept for invariant.
-//
-// For a literal `null` JSON 2xx response, json.Unmarshal produces Go
-// nil — no special-case short-circuit here; json.Marshal(nil) naturally
-// returns []byte("null"), preserving the "gateway sent null" signal on
-// the resulting *ResponseValidationError.Body. Prevents the
-// "nil Body looks like SDK forgot to set it" ambiguity so callers can
-// distinguish an upstream null payload from an SDK oversight on every
-// diagnostic path.
+// Path by input type:
+//   - string (non-JSON 2xx body the transport layer stored raw): returned
+//     as the underlying UTF-8 bytes verbatim. Re-encoding through
+//     json.Marshal would wrap the text in JSON quotes, which would hide
+//     the original gateway content behind a JSON-string literal on the
+//     caller's diagnostic .Body. Python preserves the raw text on this
+//     path too; this matches that behaviour.
+//   - nil (the parsed form of a literal JSON null response):
+//     json.Marshal(nil) → []byte("null"). Preserves the "gateway sent
+//     null" signal so the diagnostic .Body never looks like "SDK forgot
+//     to populate it."
+//   - everything else (maps, slices, numbers, bools from json.Unmarshal,
+//     plus []byte which Go marshals as base64): round-trips through
+//     json.Marshal for a predictable JSON encoding on .Body.
+//     json.Marshal on a value produced by json.Unmarshal cannot fail in
+//     practice (channels/funcs/cycles are the only rejection cases, and
+//     none originate from unmarshal), so the error branch is
+//     defensive-dead but kept for the invariant.
 func rawBodyBytes(body any) []byte {
+	if s, ok := body.(string); ok {
+		return []byte(s)
+	}
 	b, err := json.Marshal(body)
 	if err != nil {
 		return nil

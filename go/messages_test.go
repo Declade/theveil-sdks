@@ -274,15 +274,12 @@ func TestMessages_Malformed200_NonJSON_RaisesResponseValidation(t *testing.T) {
 	if !errors.As(err, &vErr) {
 		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
 	}
-	if len(vErr.Body) == 0 {
-		t.Errorf("Body should be non-empty")
-	}
-	// Mirror TestGetCertificate_Malformed200_NonJSON: rawBodyBytes now
-	// json.Marshals unconditionally, so a non-JSON text body surfaces as
-	// a JSON-quoted string literal. Lock this form so a future regression
-	// of rawBodyBytes back to type-switch special-casing can't slip past.
-	if vErr.Body[0] != '"' {
-		t.Errorf("Body should be a JSON-quoted string for non-JSON input, got %q", string(vErr.Body))
+	// rawBodyBytes preserves string inputs verbatim (no JSON re-encoding).
+	// Mirrors TestGetCertificate_Malformed200_NonJSON: a non-JSON 2xx body
+	// surfaces on .Body as the exact raw bytes the gateway sent. Matches
+	// Python's raw-text preservation on the same path.
+	if string(vErr.Body) != "not json at all" {
+		t.Errorf("Body = %q, want %q (raw, not JSON-quoted)", string(vErr.Body), "not json at all")
 	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
@@ -372,6 +369,31 @@ func TestMessages_Async202_MissingRequiredFields_RaisesResponseValidation(t *tes
 	}
 	if !strings.Contains(string(vErr.Body), "processing") {
 		t.Errorf("Body should preserve raw response: %q", string(vErr.Body))
+	}
+}
+
+func TestMessages_PlainText2xx_PreservesRawText(t *testing.T) {
+	// Regression guard mirroring
+	// TestGetCertificate_PlainText2xx_PreservesRawText: a plain-text 2xx
+	// body on the Messages path must surface on .Body as exact raw bytes,
+	// not JSON-quoted.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/plain")
+		_, _ = w.Write([]byte("service unavailable"))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.Messages(context.Background(), basicMessagesRequest())
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if string(vErr.Body) != "service unavailable" {
+		t.Errorf("Body = %q, want %q (raw, not JSON-quoted)", string(vErr.Body), "service unavailable")
+	}
+	if len(vErr.Body) > 0 && vErr.Body[0] == '"' {
+		t.Errorf("Body should not be JSON-quoted: %q", string(vErr.Body))
 	}
 }
 

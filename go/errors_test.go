@@ -128,22 +128,23 @@ func TestRawBodyBytes_EmptyMapReturnsEmptyJSONObject(t *testing.T) {
 	}
 }
 
-// String input → JSON-quoted literal. Load-bearing regression tripwire:
-// an earlier version of rawBodyBytes returned the raw UTF-8 bytes for
-// strings via a type-switch special case. The current implementation
-// always json.Marshals; this test locks that decision self-contained
-// (no handler-level integration needed).
-func TestRawBodyBytes_StringReturnsJSONQuotedLiteral(t *testing.T) {
+// String input → raw UTF-8 bytes (not JSON-quoted). This is the
+// load-bearing regression tripwire for the string path: a prior version
+// of rawBodyBytes round-tripped strings through json.Marshal and wrapped
+// the text in JSON quotes, which hid the original gateway content behind
+// a JSON-string literal on .Body. Python preserves raw text on the same
+// path; this test locks cross-language parity.
+func TestRawBodyBytes_StringReturnsRawBytes(t *testing.T) {
 	got := rawBodyBytes("plain text")
-	want := []byte(`"plain text"`)
+	want := []byte("plain text")
 	if string(got) != string(want) {
 		t.Errorf("rawBodyBytes(%q) = %q, want %q", "plain text", string(got), string(want))
 	}
 }
 
-func TestRawBodyBytes_EmptyStringReturnsQuotedEmpty(t *testing.T) {
+func TestRawBodyBytes_EmptyStringReturnsEmptyBytes(t *testing.T) {
 	got := rawBodyBytes("")
-	want := []byte(`""`)
+	want := []byte("")
 	if string(got) != string(want) {
 		t.Errorf("rawBodyBytes(\"\") = %q, want %q", string(got), string(want))
 	}

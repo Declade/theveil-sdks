@@ -449,19 +449,14 @@ func TestGetCertificate_Malformed200_NonJSON(t *testing.T) {
 	if !errors.As(err, &vErr) {
 		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
 	}
-	// rawBodyBytes now json.Marshals unconditionally (no string special-
-	// case), so a non-JSON text body surfaces as a JSON-quoted literal —
-	// the trade-off is fidelity: .Body is always valid JSON. The raw text
-	// is still recoverable (json.Unmarshal it back to string) and the
-	// substring assertion locks in "the original content is preserved,
-	// just re-encoded."
-	if !strings.Contains(string(vErr.Body), "not json at all") {
-		t.Errorf("Body should preserve the original content: %q", string(vErr.Body))
-	}
-	// The re-serialized body is a JSON string literal, not a bare JSON
-	// object. Confirm by inspecting the leading byte.
-	if len(vErr.Body) == 0 || vErr.Body[0] != '"' {
-		t.Errorf("Body should be a JSON-quoted string for non-JSON input, got %q", string(vErr.Body))
+	// rawBodyBytes preserves string inputs verbatim (no JSON re-encoding)
+	// so a non-JSON 2xx body surfaces on .Body as the exact raw bytes the
+	// gateway sent. Matches Python's raw-text preservation on the same
+	// path. The equality assertion below locks the raw form; an earlier
+	// implementation wrapped the text in JSON quotes and callers saw a
+	// `"..."` literal instead of the original content.
+	if string(vErr.Body) != "not json at all" {
+		t.Errorf("Body = %q, want %q (raw, not JSON-quoted)", string(vErr.Body), "not json at all")
 	}
 	// Invariant: must NOT also be an *HTTPError — semantic distinction.
 	var httpErr *HTTPError
@@ -477,6 +472,35 @@ func TestGetCertificate_Malformed200_NonJSON(t *testing.T) {
 	// Underlying json error preserved via Unwrap.
 	if vErr.Err == nil {
 		t.Errorf("Err should wrap the underlying json error")
+	}
+}
+
+func TestGetCertificate_PlainText2xx_PreservesRawText(t *testing.T) {
+	// Regression guard for the string-path fix in rawBodyBytes: a gateway
+	// that returns a plain-text 2xx body (e.g. an upstream error leaking
+	// through as text/plain, or a misrouted request hitting a static
+	// error page) must surface on .Body as the exact raw bytes — not a
+	// JSON-quoted literal. This was the wrong-behaviour Codex caught on
+	// the 13-commit stack review.
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/plain")
+		_, _ = w.Write([]byte("service unavailable"))
+	}
+	c, server := newMockedClient(t, handler)
+	defer server.Close()
+
+	_, err := c.GetCertificate(context.Background(), "req_plain")
+	var vErr *ResponseValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("want *ResponseValidationError, got %T (%v)", err, err)
+	}
+	if string(vErr.Body) != "service unavailable" {
+		t.Errorf("Body = %q, want %q (raw, not JSON-quoted)", string(vErr.Body), "service unavailable")
+	}
+	// Leading byte must NOT be `"` — that would mean json.Marshal wrapped
+	// the text, reintroducing the regression.
+	if len(vErr.Body) > 0 && vErr.Body[0] == '"' {
+		t.Errorf("Body should not be JSON-quoted: %q", string(vErr.Body))
 	}
 }
 
