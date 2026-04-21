@@ -12,14 +12,23 @@ line. Pre-0.1.0 builds are not supported and should not be relied on.
 
 ## Reporting a vulnerability
 
-Please report suspected security issues to:
+Please report suspected security issues through **GitHub Private
+Vulnerability Reporting** on this repository:
 
-**security@dsaveil.io**
+`theveil-sdks` → **Security** tab → **Report a vulnerability**
 
-Do **not** open a public GitHub issue for security reports. Use email so
-we can triage under embargo before details are public.
+PVR is the preferred channel — it's private, auditable, and ties directly
+into GitHub Security Advisories, which simplifies coordinated disclosure.
 
-Include, when possible:
+### Fallback: email
+
+If you cannot use GitHub PVR (e.g. you don't have a GitHub account), email:
+
+**contact@dsaveil.io** with `[security]` in the subject line.
+
+Do **not** open a public GitHub issue for security reports.
+
+### What to include
 
 - affected version (output of `python -c "import theveil; print(theveil.__version__)"`)
 - reproduction steps or a minimal PoC
@@ -53,7 +62,8 @@ Include, when possible:
   report directly to those projects. If a vulnerability in an upstream
   dependency affects `theveil` specifically, you may CC us.
 - The hosted gateway service (`gateway.dsaveil.io`) — report infrastructure
-  issues to `security@dsaveil.io` with "gateway:" in the subject line.
+  issues via GitHub PVR on this repository or to `contact@dsaveil.io` with
+  `[security][gateway]` in the subject line.
 
 ## Release integrity
 
@@ -69,4 +79,4 @@ OIDC claims are cryptographically tied to the uploaded artifact by PyPI's
 mint-token flow.
 
 If you believe a release was published from an identity *other* than this
-repository, please report it via `security@dsaveil.io` immediately.
+repository, please report it via GitHub PVR immediately.
