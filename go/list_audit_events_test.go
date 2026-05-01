@@ -13,7 +13,7 @@ import (
 // ListAuditEvents corresponds to GET /api/v1/audit/export. The handler
 // at dual-sandbox-architecture/services/gateway/internal/api/
 // audit_export.go:58-99 enforces:
-//   - x-api-key Pro+ tier (Solo Free → 403 ErrTierInsufficient)
+//   - x-api-key Pro/Enterprise tier (Developer tier → 403 ErrTierInsufficient)
 //   - days in [1,90] (default 30; HTTP 400 on out-of-range)
 //   - optional type=<event_type> filter
 //

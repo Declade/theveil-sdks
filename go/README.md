@@ -147,7 +147,7 @@ if err != nil {
 
 ### `(*Client).ListAuditEvents(ctx, opts, ...CallOption) (*AuditExportResponse, error)`
 
-GET `/api/v1/audit/export`. Pro/Enterprise tier (Solo Free returns 403).
+GET `/api/v1/audit/export`. Pro/Enterprise tier (Developer tier returns 403).
 Returns the typed `*AuditExportResponse` carrying `Events []AuditEntry`,
 `TotalEvents int`, and metadata.
 
@@ -157,7 +157,7 @@ resp, err := client.ListAuditEvents(ctx, lucairn.AuditExportOptions{
 	EventType: "veil.certificate.issued",
 })
 if err != nil {
-	// *HTTPError Status=403  → Solo Free tier, upgrade required
+	// *HTTPError Status=403  → Developer tier, upgrade to Pro/Enterprise
 	// *HTTPError Status=400  → days outside [1,90]
 	// *HTTPError Status=503  → audit export unavailable
 	return

@@ -259,7 +259,7 @@ func (c *Client) GetCertificateSummary(ctx context.Context, requestID string, op
 
 // ListAuditEvents calls GET /api/v1/audit/export and returns the
 // decoded AuditExportResponse. Pro-tier and Enterprise-tier API keys
-// only — Solo Free returns 403 (ErrTierInsufficient at audit_export.go:
+// only — Developer tier returns 403 (ErrTierInsufficient at audit_export.go:
 // 165-168). The gateway gates on profile.AuditExportEnabled, evaluated
 // inside authenticateAuditProfile (audit_export.go:152-171).
 //
