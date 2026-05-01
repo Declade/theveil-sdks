@@ -9,17 +9,19 @@ byte-equivalence locked via shared Go-assembler-generated fixtures.
 
 ## Package identifiers
 
-| Language   | Package                                   | Version  |
-|------------|-------------------------------------------|----------|
-| TypeScript | `@lucairn/sdk`                            | 1.0.0    |
-| Python     | `lucairn`                                 | 1.0.0    |
-| Go         | `github.com/declade/lucairn-sdks/go`      | v0.1.0   |
+| Language       | Package                                   | Version  |
+|----------------|-------------------------------------------|----------|
+| TypeScript     | `@lucairn/sdk`                            | 1.0.0    |
+| Python         | `lucairn`                                 | 1.0.0    |
+| Go             | `github.com/declade/lucairn-sdks/go`      | v0.1.0   |
+| MCP server     | `@lucairn/mcp-server`                     | 1.0.0    |
 
 ## Per-language docs
 
 - [TypeScript — ts/README.md](ts/README.md)
 - [Python — python/README.md](python/README.md)
 - [Go — go/README.md](go/README.md)
+- [MCP server — mcp-server/README.md](mcp-server/README.md)
 
 ## Changelog
 
