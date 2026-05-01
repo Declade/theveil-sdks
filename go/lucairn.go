@@ -29,7 +29,7 @@ type Client struct {
 
 // DefaultBaseURL is the hosted gateway for solo-dev tier. Enterprise
 // self-hosters must pass WithBaseURL at New-time.
-const DefaultBaseURL = "https://gateway.dsaveil.io"
+const DefaultBaseURL = "https://gateway.lucairn.eu"
 
 // DefaultTimeout is the default per-call timeout. Matches the TS SDK's
 // DEFAULT_TIMEOUT_MS = 30_000.
