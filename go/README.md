@@ -1,6 +1,6 @@
-# theveil — Go SDK
+# lucairn — Go SDK
 
-Client for **The Veil** — privacy-preserving AI infrastructure.
+Client for **Lucairn** — privacy-preserving AI infrastructure.
 
 ## Status
 
@@ -11,10 +11,17 @@ README](../README.md) for the full SDK index.
 ## Install
 
 ```bash
-go get github.com/declade/theveil-sdks/go@latest
+go get github.com/declade/lucairn-sdks/go@latest
 ```
 
 Requires Go 1.22+.
+
+> **Stage 3 rebrand in progress.** The repo `Declade/theveil-sdks` is being
+> renamed to `Declade/lucairn-sdks`. GitHub auto-redirects old URLs for 12
+> months after rename, so `go get` continues to resolve via the redirect
+> until cutover. The old import path
+> `github.com/declade/theveil-sdks/go` is RETIRED and will not be
+> updated; new code should use the new path.
 
 ## Quickstart
 
@@ -25,20 +32,20 @@ import (
 	"context"
 	"fmt"
 
-	theveil "github.com/declade/theveil-sdks/go"
+	lucairn "github.com/declade/lucairn-sdks/go"
 )
 
 func main() {
-	client, err := theveil.New("dsa_...")
+	client, err := lucairn.New("dsa_...")
 	if err != nil {
 		panic(err)
 	}
 
 	ctx := context.Background()
 
-	// Proxy a prompt through the Veil gateway (split-knowledge routing).
+	// Proxy a prompt through the Lucairn gateway (split-knowledge routing).
 	maxTokens := 256
-	resp, err := client.Messages(ctx, theveil.MessagesRequest{
+	resp, err := client.Messages(ctx, lucairn.MessagesRequest{
 		PromptTemplate: "Summarize the following: {text}",
 		Context:        map[string]string{"text": "Long input..."},
 		Model:          "claude-opus-4-7",
@@ -48,20 +55,20 @@ func main() {
 		panic(err)
 	}
 	switch r := resp.(type) {
-	case *theveil.ProxySyncResponse:
+	case *lucairn.ProxySyncResponse:
 		fmt.Println("sync result:", r.Status, r.ModelUsed)
-	case *theveil.ProxyAcceptedResponse:
+	case *lucairn.ProxyAcceptedResponse:
 		fmt.Println("async — poll:", r.StatusURL)
 	}
 
-	// Fetch a Veil Certificate for a known request_id (Pro+/Enterprise).
+	// Fetch a Veil Certificate for a known request_id (Pro/Enterprise).
 	cert, err := client.GetCertificate(ctx, "req_abc123")
 	if err != nil {
 		panic(err)
 	}
 
 	// Verify the witness Ed25519 signature against pinned trust-root keys.
-	result, err := client.VerifyCertificate(cert, theveil.VerifyCertificateKeys{
+	result, err := client.VerifyCertificate(cert, lucairn.VerifyCertificateKeys{
 		WitnessKeyID:     "witness_v1",
 		WitnessPublicKey: "<base64 of raw 32-byte Ed25519 public key>",
 	})
@@ -74,13 +81,15 @@ func main() {
 
 ## Public API
 
-### `theveil.New(apiKey string, opts ...Option) (*Client, error)`
+### `lucairn.New(apiKey string, opts ...Option) (*Client, error)`
 
 Constructor validates every input up front:
 
-- `apiKey` must match `^dsa_[0-9a-f]{32}$`.
+- `apiKey` must match `^dsa_[0-9a-f]{32}$`. (Stage 3 rebrand: gateway will
+  later validate `^lcr_live_*` keys; until then the legacy `dsa_*` form
+  is the source of truth.)
 - `WithBaseURL(url)` must be `http://` or `https://`; default is
-  `https://gateway.dsaveil.io`.
+  `https://gateway.lucairn.eu`.
 - `WithTimeout(d)` must be a positive `time.Duration`; default `30s`.
 - `WithHTTPClient(c)` lets you substitute a custom `*http.Client` (for
   mTLS, corporate proxies, custom transports).
@@ -92,9 +101,9 @@ union — discriminate via a type switch:
 
 ```go
 switch r := resp.(type) {
-case *theveil.ProxySyncResponse:
+case *lucairn.ProxySyncResponse:
 	// 200 terminal result — inspect r.Status for COMPLETED / FAILED
-case *theveil.ProxyAcceptedResponse:
+case *lucairn.ProxyAcceptedResponse:
 	// 202 processing receipt — poll r.StatusURL until completion
 }
 ```
@@ -108,7 +117,7 @@ or unknown requestID — the gateway does not distinguish) surfaces as
 
 ```go
 cert, err := client.GetCertificate(ctx, "req_abc")
-var httpErr *theveil.HTTPError
+var httpErr *lucairn.HTTPError
 if errors.As(err, &httpErr) && httpErr.Status == 202 {
 	body := httpErr.Body.(map[string]any)
 	retryAfter := body["retry_after_seconds"]
@@ -118,7 +127,50 @@ if errors.As(err, &httpErr) && httpErr.Status == 202 {
 
 No auto-verification — chain `VerifyCertificate` explicitly.
 
-### `theveil.VerifyCertificate(cert, keys)` / `(*Client).VerifyCertificate(cert, keys)`
+### `(*Client).GetCertificateSummary(ctx, requestID, ...CallOption) (string, error)`
+
+GET `/api/v1/veil/certificate/{requestID}/summary`. Returns the gateway's
+text/html DPO-friendly summary view as a raw string. Both pending and
+assembled states return HTTP 200 with HTML — pending shows a `PENDING`
+banner instructing the caller to retry in ~30s — so callers who want to
+distinguish should chain `GetCertificate` first or pattern-match the
+HTML. 503 surfaces as `*HTTPError` with `Status=503`.
+
+```go
+html, err := client.GetCertificateSummary(ctx, "req_abc")
+if err != nil {
+	// 503 → witness unavailable; 401/403 → auth/tier; transport errors
+	// surface as *TimeoutError / *NetworkError as usual.
+}
+// html is the raw template output; render or display as needed.
+```
+
+### `(*Client).ListAuditEvents(ctx, opts, ...CallOption) (*AuditExportResponse, error)`
+
+GET `/api/v1/audit/export`. Pro/Enterprise tier (Solo Free returns 403).
+Returns the typed `*AuditExportResponse` carrying `Events []AuditEntry`,
+`TotalEvents int`, and metadata.
+
+```go
+resp, err := client.ListAuditEvents(ctx, lucairn.AuditExportOptions{
+	Days:      30,
+	EventType: "veil.certificate.issued",
+})
+if err != nil {
+	// *HTTPError Status=403  → Solo Free tier, upgrade required
+	// *HTTPError Status=400  → days outside [1,90]
+	// *HTTPError Status=503  → audit export unavailable
+	return
+}
+for _, evt := range resp.Events {
+	fmt.Println(evt.Timestamp, evt.EventType, evt.RequestID)
+}
+```
+
+`Days = 0` lets the gateway apply its default lookback (30 days at the
+time of writing). `EventType = ""` returns events of every type.
+
+### `lucairn.VerifyCertificate(cert, keys)` / `(*Client).VerifyCertificate(cert, keys)`
 
 Verify a certificate's witness Ed25519 signature. Accepts cert as
 `*VeilCertificate`, `map[string]any`, `[]byte`, or `json.RawMessage`.
@@ -143,8 +195,8 @@ Options compose; last-write-wins on conflict:
 
 ```go
 client.GetCertificate(ctx, "req_abc",
-	theveil.WithCallTimeout(5*time.Second),
-	theveil.WithCallHeader("x-correlation-id", "corr_xyz"),
+	lucairn.WithCallTimeout(5*time.Second),
+	lucairn.WithCallHeader("x-correlation-id", "corr_xyz"),
 )
 ```
 
@@ -153,7 +205,7 @@ caller-supplied values with the same key.
 
 ## Error taxonomy
 
-All SDK errors satisfy the `theveil.Error` interface. Concrete types:
+All SDK errors satisfy the `lucairn.Error` interface. Concrete types:
 
 - `*ConfigError` — caller input invalid.
 - `*HTTPError` — gateway returned non-2xx (or 202 from `GetCertificate`);
@@ -171,7 +223,8 @@ All SDK errors satisfy the `theveil.Error` interface. Concrete types:
 - `*CertificateError` — `VerifyCertificate` failed; fields `Reason`,
   `CertificateID`, `Message`, `Err`.
 
-Use `errors.As(err, &concreteType)` to inspect typed fields.
+Use `errors.As(err, &concreteType)` to inspect typed fields. Error
+strings prefix with `lucairn: ` for source attribution.
 
 ## Behavioural parity with TS / Python
 
@@ -187,13 +240,13 @@ Intentional idiomatic divergences from the other two SDKs:
 - **Cancellation via `context.Context`**, not `AbortSignal` / cancel
   tokens. Pass a `ctx` with deadline / cancel; caller-cancel produces
   a `*NetworkError` wrapping `context.Canceled`.
-- **Error taxonomy** satisfies the `theveil.Error` interface. No deep
+- **Error taxonomy** satisfies the `lucairn.Error` interface. No deep
   inheritance chain.
 - **Functional options** (`WithBaseURL`, `WithTimeout`, `WithHTTPClient`,
   `WithCallTimeout`, `WithCallHeader`, `WithMaxResponseBytes`) for
   constructor + per-call config.
 - **PascalCase exports** per Go convention: `GetCertificate`, `Messages`,
-  `VerifyCertificate`.
+  `VerifyCertificate`, `GetCertificateSummary`, `ListAuditEvents`.
 - **Malformed 2xx body**: TS passes through as raw bytes typed as
   `VeilCertificate` (thin transport); Go follows Go-SDK precedent
   (aws-sdk-go-v2's `*smithy.DeserializationError`,
@@ -201,7 +254,7 @@ Intentional idiomatic divergences from the other two SDKs:
   `(nil, *ResponseValidationError)` on any decode failure. `*HTTPError`
   is reserved for non-2xx transport failures — an HTTP 200 is not an
   HTTP error. The same applies uniformly across `GetCertificate`,
-  `Messages`, and any other 2xx-decode path.
+  `Messages`, `ListAuditEvents`, and any other 2xx-decode path.
   A 2xx JSON object whose shape is structurally valid but whose
   required fields are missing (Go's `json.Unmarshal` zero-values them
   permissively) is also rejected with `*ResponseValidationError` — the
