@@ -24,6 +24,8 @@ from lucairn.errors import (
     LucairnTimeoutError,
 )
 from lucairn.types import (
+    AuditExportOptions,
+    AuditExportResponse,
     MessagesOptions,
     ProxyAcceptedResponse,
     ProxyMessagesRequest,
@@ -276,6 +278,75 @@ class Lucairn:
             effective_body = raw_text if body is None else body
             raise LucairnResponseValidationError(
                 "Response body failed to deserialize as VeilCertificate",
+                body=effective_body,
+                cause=exc,
+            ) from exc
+
+    def list_audit_events(
+        self,
+        opts: AuditExportOptions | None = None,
+    ) -> AuditExportResponse:
+        """Fetch the customer's audit events from the gateway.
+
+        Calls ``GET /api/v1/audit/export`` with optional ``days`` /
+        ``type`` query parameters. Authentication is the same
+        ``x-api-key`` header used by every other client method; the
+        endpoint is tier-gated by the gateway and returns HTTP 503 with
+        ``code=audit_export_unavailable`` when the calling customer's
+        tier does not have audit export enabled. The 503 surfaces as a
+        :class:`LucairnHttpError` so callers can branch on
+        ``err.status == 503`` and ``err.body["code"]``.
+
+        Citations:
+            - Handler:
+              ``dual-sandbox-architecture/services/gateway/internal/api/audit_export.go:60-100``
+            - Entry shape:
+              ``dual-sandbox-architecture/services/gateway/internal/audit/buffer.go:11-17``
+        """
+
+        # Build query string from opts; both fields optional.
+        query: list[str] = []
+        per_call_options: MessagesOptions | None = None
+        if opts is not None:
+            if opts.days is not None:
+                if (
+                    not isinstance(opts.days, int)
+                    or isinstance(opts.days, bool)
+                    or opts.days < 1
+                ):
+                    raise LucairnConfigError(
+                        f"opts.days must be a positive int, got {opts.days!r}"
+                    )
+                query.append(f"days={opts.days}")
+            if opts.type is not None:
+                if not isinstance(opts.type, str):
+                    raise LucairnConfigError(
+                        f"opts.type must be a str, got {type(opts.type).__name__}"
+                    )
+                query.append(f"type={quote(opts.type, safe='')}")
+            # Reuse the existing per-call timeout/headers mechanism.
+            per_call_options = MessagesOptions(
+                timeout=opts.timeout,
+                headers=dict(opts.headers) if opts.headers else {},
+            )
+
+        path = "/api/v1/audit/export"
+        if query:
+            path = f"{path}?{'&'.join(query)}"
+
+        _status, body, raw_text = self._request(
+            path=path,
+            method="GET",
+            body=None,
+            options=per_call_options,
+        )
+
+        try:
+            return AuditExportResponse.model_validate(body)
+        except ValidationError as exc:
+            effective_body = raw_text if body is None else body
+            raise LucairnResponseValidationError(
+                "Response body failed to deserialize as AuditExportResponse",
                 body=effective_body,
                 cause=exc,
             ) from exc

@@ -8,6 +8,9 @@ from lucairn.errors import (
     LucairnTimeoutError,
 )
 from lucairn.types import (
+    AuditEntry,
+    AuditExportOptions,
+    AuditExportResponse,
     MessagesOptions,
     ProxyAcceptedResponse,
     ProxyMessagesRequest,
@@ -43,6 +46,9 @@ def get_client_id(cert: VeilCertificate) -> str | None:
 
 
 __all__ = [
+    "AuditEntry",
+    "AuditExportOptions",
+    "AuditExportResponse",
     "MessagesOptions",
     "ProxyAcceptedResponse",
     "ProxyMessagesRequest",
