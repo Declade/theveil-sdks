@@ -1,8 +1,12 @@
-export interface TheVeilConfig {
+export interface LucairnConfig {
   apiKey: string;
   baseUrl?: string;
   timeoutMs?: number;
 }
+
+// Legacy alias — pre-Stage-3 callers used `TheVeilConfig`. Removed in next
+// minor bump.
+export type TheVeilConfig = LucairnConfig;
 
 // Mirror of gateway proxyPIIAnnotation (ground-truth annotation for proving_ground mode).
 // TODO(proxy-sync): keep in lockstep with
@@ -41,7 +45,7 @@ export type ProxyMessagesRequest = Omit<ProxyRequest, 'stream'> & {
 // defaults at request time.
 export interface MessagesOptions {
   // Caller-owned abort signal. If it fires, the caller's abort reason is
-  // rethrown verbatim (not wrapped in TheVeilTimeoutError).
+  // rethrown verbatim (not wrapped in LucairnTimeoutError).
   signal?: AbortSignal;
   // Per-call timeout in milliseconds. Overrides the client default for this
   // call only.

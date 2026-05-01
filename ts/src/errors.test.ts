@@ -1,81 +1,81 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TheVeilCertificateError,
-  TheVeilConfigError,
-  TheVeilError,
-  TheVeilHttpError,
-  TheVeilTimeoutError,
+  LucairnCertificateError,
+  LucairnConfigError,
+  LucairnError,
+  LucairnHttpError,
+  LucairnTimeoutError,
 } from './errors.js';
 import type { VerifyCertificateFailureReason } from './errors.js';
 
-describe('TheVeilError hierarchy', () => {
-  it('TheVeilError is an Error and preserves the message', () => {
-    const err = new TheVeilError('boom');
+describe('LucairnError hierarchy', () => {
+  it('LucairnError is an Error and preserves the message', () => {
+    const err = new LucairnError('boom');
     expect(err).toBeInstanceOf(Error);
-    expect(err).toBeInstanceOf(TheVeilError);
-    expect(err.name).toBe('TheVeilError');
+    expect(err).toBeInstanceOf(LucairnError);
+    expect(err.name).toBe('LucairnError');
     expect(err.message).toBe('boom');
   });
 
-  it('TheVeilConfigError extends TheVeilError and Error', () => {
-    const err = new TheVeilConfigError('bad config');
+  it('LucairnConfigError extends LucairnError and Error', () => {
+    const err = new LucairnConfigError('bad config');
     expect(err).toBeInstanceOf(Error);
-    expect(err).toBeInstanceOf(TheVeilError);
-    expect(err).toBeInstanceOf(TheVeilConfigError);
-    expect(err.name).toBe('TheVeilConfigError');
+    expect(err).toBeInstanceOf(LucairnError);
+    expect(err).toBeInstanceOf(LucairnConfigError);
+    expect(err.name).toBe('LucairnConfigError');
     expect(err.message).toBe('bad config');
   });
 
-  it('TheVeilHttpError preserves status and body', () => {
-    const err = new TheVeilHttpError('nope', 503, { reason: 'degraded' });
+  it('LucairnHttpError preserves status and body', () => {
+    const err = new LucairnHttpError('nope', 503, { reason: 'degraded' });
     expect(err).toBeInstanceOf(Error);
-    expect(err).toBeInstanceOf(TheVeilError);
-    expect(err).toBeInstanceOf(TheVeilHttpError);
-    expect(err.name).toBe('TheVeilHttpError');
+    expect(err).toBeInstanceOf(LucairnError);
+    expect(err).toBeInstanceOf(LucairnHttpError);
+    expect(err.name).toBe('LucairnHttpError');
     expect(err.status).toBe(503);
     expect(err.body).toEqual({ reason: 'degraded' });
   });
 
-  it('TheVeilHttpError keeps a non-object body verbatim', () => {
-    const err = new TheVeilHttpError('plain', 502, 'upstream timeout');
+  it('LucairnHttpError keeps a non-object body verbatim', () => {
+    const err = new LucairnHttpError('plain', 502, 'upstream timeout');
     expect(err.body).toBe('upstream timeout');
   });
 
-  it('TheVeilTimeoutError extends TheVeilError and preserves cause', () => {
+  it('LucairnTimeoutError extends LucairnError and preserves cause', () => {
     const underlying = new Error('aborted');
     underlying.name = 'AbortError';
-    const err = new TheVeilTimeoutError('timeout', { cause: underlying });
+    const err = new LucairnTimeoutError('timeout', { cause: underlying });
     expect(err).toBeInstanceOf(Error);
-    expect(err).toBeInstanceOf(TheVeilError);
-    expect(err).toBeInstanceOf(TheVeilTimeoutError);
-    expect(err.name).toBe('TheVeilTimeoutError');
+    expect(err).toBeInstanceOf(LucairnError);
+    expect(err).toBeInstanceOf(LucairnTimeoutError);
+    expect(err.name).toBe('LucairnTimeoutError');
     expect(err.cause).toBe(underlying);
   });
 });
 
-describe('TheVeilCertificateError', () => {
-  it('extends TheVeilError and carries .reason + optional .certificateId', () => {
-    const err = new TheVeilCertificateError('bad sig', {
+describe('LucairnCertificateError', () => {
+  it('extends LucairnError and carries .reason + optional .certificateId', () => {
+    const err = new LucairnCertificateError('bad sig', {
       reason: 'invalid_signature',
       certificateId: 'veil_abc',
     });
     expect(err).toBeInstanceOf(Error);
-    expect(err).toBeInstanceOf(TheVeilError);
-    expect(err).toBeInstanceOf(TheVeilCertificateError);
-    expect(err.name).toBe('TheVeilCertificateError');
+    expect(err).toBeInstanceOf(LucairnError);
+    expect(err).toBeInstanceOf(LucairnCertificateError);
+    expect(err.name).toBe('LucairnCertificateError');
     expect(err.reason).toBe('invalid_signature');
     expect(err.certificateId).toBe('veil_abc');
     expect(err.message).toBe('bad sig');
   });
 
   it('omits certificateId cleanly when unset', () => {
-    const err = new TheVeilCertificateError('boom', { reason: 'malformed' });
+    const err = new LucairnCertificateError('boom', { reason: 'malformed' });
     expect(err.certificateId).toBeUndefined();
   });
 
   it('preserves cause when passed via ErrorOptions', () => {
     const underlying = new TypeError('bad key length');
-    const err = new TheVeilCertificateError('sig verify fail', {
+    const err = new LucairnCertificateError('sig verify fail', {
       reason: 'invalid_signature',
       cause: underlying,
     });
@@ -84,8 +84,8 @@ describe('TheVeilCertificateError', () => {
 
   it('throws cleanly (instanceof survives throw)', () => {
     expect(() => {
-      throw new TheVeilCertificateError('x', { reason: 'witness_mismatch' });
-    }).toThrow(TheVeilCertificateError);
+      throw new LucairnCertificateError('x', { reason: 'witness_mismatch' });
+    }).toThrow(LucairnCertificateError);
   });
 
   it('reason union is exhaustive over the 5 v1 reasons (compile-time check)', () => {
@@ -99,5 +99,21 @@ describe('TheVeilCertificateError', () => {
       invalid_signature: true,
     };
     expect(Object.keys(exhaustive)).toHaveLength(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy alias regression guard — the pre-Stage-3 names must stay re-exported
+// and refer to the same constructors. If the next minor bump removes the
+// aliases, this block goes with it.
+// ---------------------------------------------------------------------------
+describe('legacy TheVeil* alias re-exports', () => {
+  it('TheVeil* names from index resolve to the Lucairn* constructors', async () => {
+    const idx = await import('./index.js');
+    expect(idx.TheVeilError).toBe(LucairnError);
+    expect(idx.TheVeilConfigError).toBe(LucairnConfigError);
+    expect(idx.TheVeilHttpError).toBe(LucairnHttpError);
+    expect(idx.TheVeilTimeoutError).toBe(LucairnTimeoutError);
+    expect(idx.TheVeilCertificateError).toBe(LucairnCertificateError);
   });
 });

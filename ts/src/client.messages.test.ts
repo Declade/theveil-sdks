@@ -1,11 +1,11 @@
 import { delay, http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { TheVeil } from './client.js';
+import { Lucairn } from './client.js';
 import {
-  TheVeilConfigError,
-  TheVeilError,
-  TheVeilHttpError,
-  TheVeilTimeoutError,
+  LucairnConfigError,
+  LucairnError,
+  LucairnHttpError,
+  LucairnTimeoutError,
 } from './errors.js';
 import { server } from './test-server.js';
 import type {
@@ -27,7 +27,7 @@ const BASIC_REQUEST: ProxyMessagesRequest = {
   max_tokens: 1024,
 };
 
-describe('TheVeil.messages() — happy path (sync 200)', () => {
+describe('Lucairn.messages() — happy path (sync 200)', () => {
   it('returns a typed ProxySyncResponse on 200', async () => {
     server.use(
       http.post(MESSAGES_URL, () =>
@@ -42,7 +42,7 @@ describe('TheVeil.messages() — happy path (sync 200)', () => {
       ),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const response = await client.messages(BASIC_REQUEST);
 
     // Discriminated union: narrow via the `status` literal. The async path
@@ -75,7 +75,7 @@ describe('TheVeil.messages() — happy path (sync 200)', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     await client.messages(BASIC_REQUEST);
 
     expect(capturedBody).toEqual(BASIC_REQUEST);
@@ -84,7 +84,7 @@ describe('TheVeil.messages() — happy path (sync 200)', () => {
   });
 });
 
-describe('TheVeil.messages() — async 202 accepted', () => {
+describe('Lucairn.messages() — async 202 accepted', () => {
   it('returns a typed ProxyAcceptedResponse when the gateway times out to 202', async () => {
     server.use(
       http.post(MESSAGES_URL, () =>
@@ -100,7 +100,7 @@ describe('TheVeil.messages() — async 202 accepted', () => {
       ),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const response = await client.messages(BASIC_REQUEST);
 
     // Narrow into the accepted branch. After this check, the compiler should
@@ -135,7 +135,7 @@ describe('TheVeil.messages() — async 202 accepted', () => {
       ),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const response = await client.messages(BASIC_REQUEST);
 
     if (response.status !== 'processing') {
@@ -150,7 +150,7 @@ describe('TheVeil.messages() — async 202 accepted', () => {
   });
 });
 
-describe('TheVeil.messages() — HTTP error mapping', () => {
+describe('Lucairn.messages() — HTTP error mapping', () => {
   const cases: Array<{ status: number; label: string; body: Record<string, unknown> }> = [
     { status: 400, label: 'bad request', body: { error: 'invalid_request', message: 'missing prompt_template' } },
     { status: 401, label: 'unauthorized', body: { error: 'invalid_api_key' } },
@@ -159,19 +159,19 @@ describe('TheVeil.messages() — HTTP error mapping', () => {
   ];
 
   for (const { status, label, body } of cases) {
-    it(`maps ${status} ${label} to TheVeilHttpError with .status=${status} and parsed body`, async () => {
+    it(`maps ${status} ${label} to LucairnHttpError with .status=${status} and parsed body`, async () => {
       server.use(
         http.post(MESSAGES_URL, () => HttpResponse.json(body, { status })),
       );
 
-      const client = new TheVeil({ apiKey: VALID_KEY });
+      const client = new Lucairn({ apiKey: VALID_KEY });
       try {
         await client.messages(BASIC_REQUEST);
-        expect.fail(`expected ${status} to throw TheVeilHttpError`);
+        expect.fail(`expected ${status} to throw LucairnHttpError`);
       } catch (err) {
-        expect(err).toBeInstanceOf(TheVeilHttpError);
-        expect(err).toBeInstanceOf(TheVeilError);
-        const httpErr = err as TheVeilHttpError;
+        expect(err).toBeInstanceOf(LucairnHttpError);
+        expect(err).toBeInstanceOf(LucairnError);
+        const httpErr = err as LucairnHttpError;
         expect(httpErr.status).toBe(status);
         expect(httpErr.body).toEqual(body);
       }
@@ -179,23 +179,23 @@ describe('TheVeil.messages() — HTTP error mapping', () => {
   }
 });
 
-describe('TheVeil.messages() — transport errors', () => {
-  it('wraps a network failure in TheVeilError (not TheVeilHttpError)', async () => {
+describe('Lucairn.messages() — transport errors', () => {
+  it('wraps a network failure in LucairnError (not LucairnHttpError)', async () => {
     server.use(http.post(MESSAGES_URL, () => HttpResponse.error()));
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await client.messages(BASIC_REQUEST);
       expect.fail('expected network failure to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilError);
-      expect(err).not.toBeInstanceOf(TheVeilHttpError);
+      expect(err).toBeInstanceOf(LucairnError);
+      expect(err).not.toBeInstanceOf(LucairnHttpError);
     }
   });
 });
 
-describe('TheVeil.messages() — timeout', () => {
-  it('fires TheVeilTimeoutError when the per-call timeout elapses', async () => {
+describe('Lucairn.messages() — timeout', () => {
+  it('fires LucairnTimeoutError when the per-call timeout elapses', async () => {
     server.use(
       http.post(MESSAGES_URL, async () => {
         await delay(500);
@@ -203,13 +203,13 @@ describe('TheVeil.messages() — timeout', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await client.messages(BASIC_REQUEST, { timeoutMs: 50 });
       expect.fail('expected timeout to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilTimeoutError);
-      expect((err as TheVeilTimeoutError).message).toContain('50ms');
+      expect(err).toBeInstanceOf(LucairnTimeoutError);
+      expect((err as LucairnTimeoutError).message).toContain('50ms');
     }
   });
 
@@ -221,31 +221,31 @@ describe('TheVeil.messages() — timeout', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY, timeoutMs: 60 });
+    const client = new Lucairn({ apiKey: VALID_KEY, timeoutMs: 60 });
     try {
       await client.messages(BASIC_REQUEST);
       expect.fail('expected client-level timeout to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilTimeoutError);
-      expect((err as TheVeilTimeoutError).message).toContain('60ms');
+      expect(err).toBeInstanceOf(LucairnTimeoutError);
+      expect((err as LucairnTimeoutError).message).toContain('60ms');
     }
   });
 });
 
-describe('TheVeil.messages() — numeric field finite guard', () => {
-  const client = new TheVeil({ apiKey: VALID_KEY });
+describe('Lucairn.messages() — numeric field finite guard', () => {
+  const client = new Lucairn({ apiKey: VALID_KEY });
 
   it.each([
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['-Infinity', Number.NEGATIVE_INFINITY],
-  ])('rejects %s max_tokens with TheVeilConfigError mentioning the field', async (_label, value) => {
+  ])('rejects %s max_tokens with LucairnConfigError mentioning the field', async (_label, value) => {
     try {
       await client.messages({ ...BASIC_REQUEST, max_tokens: value });
       expect.fail('expected rejection');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilConfigError);
-      expect((err as TheVeilConfigError).message).toContain('max_tokens');
+      expect(err).toBeInstanceOf(LucairnConfigError);
+      expect((err as LucairnConfigError).message).toContain('max_tokens');
     }
   });
 
@@ -253,13 +253,13 @@ describe('TheVeil.messages() — numeric field finite guard', () => {
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['-Infinity', Number.NEGATIVE_INFINITY],
-  ])('rejects %s temperature with TheVeilConfigError mentioning the field', async (_label, value) => {
+  ])('rejects %s temperature with LucairnConfigError mentioning the field', async (_label, value) => {
     try {
       await client.messages({ ...BASIC_REQUEST, temperature: value });
       expect.fail('expected rejection');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilConfigError);
-      expect((err as TheVeilConfigError).message).toContain('temperature');
+      expect(err).toBeInstanceOf(LucairnConfigError);
+      expect((err as LucairnConfigError).message).toContain('temperature');
     }
   });
 
@@ -279,11 +279,11 @@ describe('TheVeil.messages() — numeric field finite guard', () => {
         });
         expect.fail('expected rejection');
       } catch (err) {
-        expect(err).toBeInstanceOf(TheVeilConfigError);
+        expect(err).toBeInstanceOf(LucairnConfigError);
         // Error message names the offending nested field path so callers can
         // locate the bad annotation without diffing their payload.
-        expect((err as TheVeilConfigError).message).toContain('ground_truth');
-        expect((err as TheVeilConfigError).message).toContain(expectedField);
+        expect((err as LucairnConfigError).message).toContain('ground_truth');
+        expect((err as LucairnConfigError).message).toContain(expectedField);
       }
     },
   );
@@ -295,7 +295,7 @@ describe('TheVeil.messages() — numeric field finite guard', () => {
     ['non-array object', { foo: 'bar' }],
     ['non-array number', 42],
   ])(
-    'rejects malformed ground_truth[field] = %s with TheVeilConfigError',
+    'rejects malformed ground_truth[field] = %s with LucairnConfigError',
     async (_label, value) => {
       try {
         // Simulate a JS-only caller or `any`-typed payload bypassing the
@@ -306,8 +306,8 @@ describe('TheVeil.messages() — numeric field finite guard', () => {
         });
         expect.fail('expected rejection');
       } catch (err) {
-        expect(err).toBeInstanceOf(TheVeilConfigError);
-        expect((err as TheVeilConfigError).message).toContain('ground_truth.name');
+        expect(err).toBeInstanceOf(LucairnConfigError);
+        expect((err as LucairnConfigError).message).toContain('ground_truth.name');
       }
     },
   );
@@ -332,7 +332,7 @@ describe('TheVeil.messages() — numeric field finite guard', () => {
   });
 });
 
-describe('TheVeil.messages() — per-call timeoutMs validation', () => {
+describe('Lucairn.messages() — per-call timeoutMs validation', () => {
   // Mirrors the constructor's rejection set so callers can't silently slip
   // invalid values past the per-call path.
   it.each([
@@ -340,15 +340,15 @@ describe('TheVeil.messages() — per-call timeoutMs validation', () => {
     ['negative', -1],
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
-  ])('rejects %s timeoutMs with TheVeilConfigError', async (_label, value) => {
-    const client = new TheVeil({ apiKey: VALID_KEY });
+  ])('rejects %s timeoutMs with LucairnConfigError', async (_label, value) => {
+    const client = new Lucairn({ apiKey: VALID_KEY });
     await expect(
       client.messages(BASIC_REQUEST, { timeoutMs: value }),
-    ).rejects.toBeInstanceOf(TheVeilConfigError);
+    ).rejects.toBeInstanceOf(LucairnConfigError);
   });
 });
 
-describe('TheVeil.messages() — caller abort', () => {
+describe('Lucairn.messages() — caller abort', () => {
   it('rethrows the caller-supplied abort reason verbatim', async () => {
     server.use(
       http.post(MESSAGES_URL, async () => {
@@ -357,7 +357,7 @@ describe('TheVeil.messages() — caller abort', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const controller = new AbortController();
     const reason = new Error('caller cancelled');
 
@@ -370,14 +370,14 @@ describe('TheVeil.messages() — caller abort', () => {
       expect.fail('expected caller abort to throw');
     } catch (err) {
       expect(err).toBe(reason);
-      expect(err).not.toBeInstanceOf(TheVeilTimeoutError);
+      expect(err).not.toBeInstanceOf(LucairnTimeoutError);
     }
   });
 
   it('rejects immediately without issuing fetch when caller signal is already aborted', async () => {
     // No MSW handler — onUnhandledRequest: 'error' would fire if fetch ran,
     // which is the behavioural proof that we short-circuit before fetch().
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const controller = new AbortController();
     const reason = new Error('pre-aborted');
     controller.abort(reason);
@@ -388,7 +388,7 @@ describe('TheVeil.messages() — caller abort', () => {
   });
 });
 
-describe('TheVeil.messages() — composed signal (caller + timeout)', () => {
+describe('Lucairn.messages() — composed signal (caller + timeout)', () => {
   it("caller aborts before timeout → caller's reason wins", async () => {
     server.use(
       http.post(MESSAGES_URL, async () => {
@@ -397,7 +397,7 @@ describe('TheVeil.messages() — composed signal (caller + timeout)', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const controller = new AbortController();
     const reason = new Error('caller wins');
 
@@ -412,11 +412,11 @@ describe('TheVeil.messages() — composed signal (caller + timeout)', () => {
       expect.fail('expected caller abort to win');
     } catch (err) {
       expect(err).toBe(reason);
-      expect(err).not.toBeInstanceOf(TheVeilTimeoutError);
+      expect(err).not.toBeInstanceOf(LucairnTimeoutError);
     }
   });
 
-  it('timeout fires before caller aborts → TheVeilTimeoutError wins', async () => {
+  it('timeout fires before caller aborts → LucairnTimeoutError wins', async () => {
     server.use(
       http.post(MESSAGES_URL, async () => {
         await delay(500);
@@ -424,7 +424,7 @@ describe('TheVeil.messages() — composed signal (caller + timeout)', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const controller = new AbortController(); // never fired
 
     try {
@@ -434,8 +434,8 @@ describe('TheVeil.messages() — composed signal (caller + timeout)', () => {
       });
       expect.fail('expected timeout to win');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilTimeoutError);
-      expect((err as TheVeilTimeoutError).message).toContain('50ms');
+      expect(err).toBeInstanceOf(LucairnTimeoutError);
+      expect((err as LucairnTimeoutError).message).toContain('50ms');
     }
   });
 });
@@ -517,7 +517,7 @@ describe('ProxyMessagesRequest — compile-time typing', () => {
   });
 });
 
-describe('TheVeil.messages() — per-call header merge', () => {
+describe('Lucairn.messages() — per-call header merge', () => {
   it('preserves caller custom headers but keeps SDK-owned headers SDK-owned', async () => {
     const captured: Record<string, string> = {};
     server.use(
@@ -529,7 +529,7 @@ describe('TheVeil.messages() — per-call header merge', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     await client.messages(BASIC_REQUEST, {
       headers: {
         'X-Request-ID': 'trace-abc-123',

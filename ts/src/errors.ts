@@ -1,36 +1,36 @@
-export class TheVeilError extends Error {
+export class LucairnError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = 'TheVeilError';
+    this.name = 'LucairnError';
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
-export class TheVeilConfigError extends TheVeilError {
+export class LucairnConfigError extends LucairnError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = 'TheVeilConfigError';
+    this.name = 'LucairnConfigError';
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
-export class TheVeilHttpError extends TheVeilError {
+export class LucairnHttpError extends LucairnError {
   public readonly status: number;
   public readonly body: unknown;
 
   constructor(message: string, status: number, body: unknown, options?: ErrorOptions) {
     super(message, options);
-    this.name = 'TheVeilHttpError';
+    this.name = 'LucairnHttpError';
     this.status = status;
     this.body = body;
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
-export class TheVeilTimeoutError extends TheVeilError {
+export class LucairnTimeoutError extends LucairnError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = 'TheVeilTimeoutError';
+    this.name = 'LucairnTimeoutError';
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
@@ -42,12 +42,12 @@ export type VerifyCertificateFailureReason =
   | 'witness_signature_missing'
   | 'invalid_signature';
 
-export interface TheVeilCertificateErrorOptions extends ErrorOptions {
+export interface LucairnCertificateErrorOptions extends ErrorOptions {
   reason: VerifyCertificateFailureReason;
   certificateId?: string;
 }
 
-export class TheVeilCertificateError extends TheVeilError {
+export class LucairnCertificateError extends LucairnError {
   public readonly reason: VerifyCertificateFailureReason;
 
   /**
@@ -62,11 +62,25 @@ export class TheVeilCertificateError extends TheVeilError {
    */
   public readonly certificateId?: string;
 
-  constructor(message: string, options: TheVeilCertificateErrorOptions) {
+  constructor(message: string, options: LucairnCertificateErrorOptions) {
     super(message, options);
-    this.name = 'TheVeilCertificateError';
+    this.name = 'LucairnCertificateError';
     this.reason = options.reason;
     this.certificateId = options.certificateId;
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Legacy aliases — one minor-version migration cycle.
+// Pre-Stage-3 callers imported `TheVeil*Error` names; these re-exports keep
+// existing code compiling. Removal is scheduled for the next minor bump.
+// ---------------------------------------------------------------------------
+export {
+  LucairnError as TheVeilError,
+  LucairnConfigError as TheVeilConfigError,
+  LucairnHttpError as TheVeilHttpError,
+  LucairnTimeoutError as TheVeilTimeoutError,
+  LucairnCertificateError as TheVeilCertificateError,
+};
+export type { LucairnCertificateErrorOptions as TheVeilCertificateErrorOptions };

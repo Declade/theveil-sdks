@@ -1,14 +1,14 @@
 import {
-  TheVeilConfigError,
-  TheVeilError,
-  TheVeilHttpError,
-  TheVeilTimeoutError,
+  LucairnConfigError,
+  LucairnError,
+  LucairnHttpError,
+  LucairnTimeoutError,
 } from './errors.js';
 import type {
+  LucairnConfig,
   MessagesOptions,
   ProxyMessagesRequest,
   ProxyResponse,
-  TheVeilConfig,
   VeilCertificate,
   VerifyCertificateKeys,
   VerifyCertificateResult,
@@ -28,10 +28,10 @@ function normalizeBaseUrl(raw: string): string {
   try {
     parsed = new URL(raw);
   } catch {
-    throw new TheVeilConfigError(`Invalid baseUrl: ${raw}`);
+    throw new LucairnConfigError(`Invalid baseUrl: ${raw}`);
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new TheVeilConfigError(
+    throw new LucairnConfigError(
       `baseUrl must use http or https, got: ${parsed.protocol}`,
     );
   }
@@ -39,11 +39,11 @@ function normalizeBaseUrl(raw: string): string {
 }
 
 // Shared validator so constructor-level and per-call timeouts reject the same
-// set of inputs. Returns the validated number; throws TheVeilConfigError on
+// set of inputs. Returns the validated number; throws LucairnConfigError on
 // 0, negative, NaN, or Infinity.
 function validateTimeoutMs(value: number, source: string): number {
   if (!Number.isFinite(value) || value <= 0) {
-    throw new TheVeilConfigError(
+    throw new LucairnConfigError(
       `Invalid ${source}: ${value} — must be a positive finite number`,
     );
   }
@@ -56,7 +56,7 @@ function validateTimeoutMs(value: number, source: string): number {
 // the error so nested paths (ground_truth.<field>[i].start) are locatable.
 function validateFiniteNumber(value: number, fieldName: string): void {
   if (!Number.isFinite(value)) {
-    throw new TheVeilConfigError(
+    throw new LucairnConfigError(
       `Invalid ${fieldName}: ${value} — must be a finite number`,
     );
   }
@@ -75,9 +75,9 @@ function validateProxyMessagesRequest(params: ProxyMessagesRequest): void {
       // `any`-typed bodies. TypeScript enforces ProxyPIIAnnotation[] at compile
       // time, but undefined / null / non-array values would otherwise throw a
       // bare TypeError from .forEach instead of the expected
-      // TheVeilConfigError with a locatable field path.
+      // LucairnConfigError with a locatable field path.
       if (!Array.isArray(annotations)) {
-        throw new TheVeilConfigError(
+        throw new LucairnConfigError(
           `Invalid ground_truth.${field}: expected ProxyPIIAnnotation[], got ${annotations === null ? 'null' : typeof annotations}`,
         );
       }
@@ -89,7 +89,28 @@ function validateProxyMessagesRequest(params: ProxyMessagesRequest): void {
   }
 }
 
-export class TheVeil {
+/**
+ * Lucairn — privacy-preserving AI gateway client for TypeScript.
+ *
+ * Wraps the hosted Lucairn gateway (default `https://gateway.lucairn.eu`)
+ * with construction-time `apiKey` validation, `baseUrl` normalization,
+ * per-call timeout composition, and typed error classes. Self-host
+ * deployments must pass `baseUrl` explicitly.
+ *
+ * @example
+ * ```ts
+ * import { Lucairn, LucairnHttpError } from '@lucairn/sdk';
+ *
+ * const client = new Lucairn({ apiKey: process.env.LUCAIRN_API_KEY! });
+ * const response = await client.messages({
+ *   prompt_template: 'Hello {name}',
+ *   context: { name: 'Example Person' },
+ *   model: 'claude-sonnet-4-5',
+ *   max_tokens: 1024,
+ * });
+ * ```
+ */
+export class Lucairn {
   // Private class field: excluded from JSON.stringify and util.inspect, and
   // unreachable via `client.apiKey` at both compile time and runtime. Keeps
   // the key out of accidental log lines, structured-clone payloads, and
@@ -98,19 +119,19 @@ export class TheVeil {
   public readonly baseUrl: string;
   public readonly timeoutMs: number;
 
-  constructor(config: TheVeilConfig) {
+  constructor(config: LucairnConfig) {
     // Runtime capability check: AbortSignal.any landed in Node 18.17.
     // Older runtimes fail opaquely inside request<T>() with a
     // "AbortSignal.any is not a function" TypeError — much friendlier to
     // surface the incompatibility at construction time.
     if (typeof AbortSignal.any !== 'function') {
-      throw new TheVeilConfigError(
+      throw new LucairnConfigError(
         'Unsupported runtime: AbortSignal.any is not available. Node 18.17+ (or equivalent) is required.',
       );
     }
 
     if (!config || typeof config.apiKey !== 'string' || !API_KEY_PATTERN.test(config.apiKey)) {
-      throw new TheVeilConfigError(
+      throw new LucairnConfigError(
         'Invalid apiKey — expected format "dsa_" followed by 32 lowercase hex characters',
       );
     }
@@ -170,7 +191,7 @@ export class TheVeil {
   // return is narrowly Promise<VeilCertificate>; the gateway's 202
   // pending-wrapper response (cert not yet assembled, or unknown
   // request_id — the gateway does not distinguish those two cases)
-  // surfaces as TheVeilHttpError{ status: 202, body: {status:"pending",
+  // surfaces as LucairnHttpError{ status: 202, body: {status:"pending",
   // retry_after_seconds, ...} } so callers get a narrow happy-path type
   // and an explicit retry signal on the error branch. The `.status` on
   // the thrown error is the real HTTP status reported by the gateway.
@@ -193,11 +214,11 @@ export class TheVeil {
 
     // 202 means the gateway reached the witness but the certificate is
     // not yet assembled (or the request_id is unknown — the gateway does
-    // not distinguish the two). Surface as TheVeilHttpError so the
+    // not distinguish the two). Surface as LucairnHttpError so the
     // happy-path return stays a narrow VeilCertificate. Inspect
     // err.body.retry_after_seconds on the caller side.
     if (status === 202) {
-      throw new TheVeilHttpError(
+      throw new LucairnHttpError(
         'Veil certificate is not yet assembled; retry after the indicated delay.',
         status,
         body,
@@ -207,7 +228,7 @@ export class TheVeil {
     // Thin-transport rule: do NOT validate the body shape on the 2xx
     // happy path. A non-JSON or wrong-shaped 200 passes through typed
     // as VeilCertificate; downstream verifyCertificate() will reject
-    // it with TheVeilCertificateError{ reason:"malformed" }.
+    // it with LucairnCertificateError{ reason:"malformed" }.
     return body as VeilCertificate;
   }
 
@@ -274,15 +295,15 @@ export class TheVeil {
       }
 
       if (!response.ok) {
-        throw new TheVeilHttpError(
-          `TheVeil request failed: ${response.status} ${response.statusText}`,
+        throw new LucairnHttpError(
+          `Lucairn request failed: ${response.status} ${response.statusText}`,
           response.status,
           body,
         );
       }
       return { status: response.status, body: body as T };
     } catch (err) {
-      if (err instanceof TheVeilError) {
+      if (err instanceof LucairnError) {
         throw err;
       }
       // Abort path: if our composed signal fired, identity-compare its reason
@@ -296,14 +317,17 @@ export class TheVeil {
           // they passed to controller.abort(reason).
           throw callerSignal.reason;
         }
-        throw new TheVeilTimeoutError(
+        throw new LucairnTimeoutError(
           `Request timed out after ${timeoutMs}ms`,
           { cause: err },
         );
       }
-      throw new TheVeilError('Request failed', { cause: err });
+      throw new LucairnError('Request failed', { cause: err });
     } finally {
       clearTimeout(timer);
     }
   }
 }
+
+// Legacy alias — pre-Stage-3 callers used `TheVeil`. Removed in next minor bump.
+export { Lucairn as TheVeil };

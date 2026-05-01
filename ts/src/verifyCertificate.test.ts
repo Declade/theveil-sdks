@@ -5,7 +5,7 @@ import { generateKeyPairSync, sign, type JsonWebKey } from 'node:crypto';
 import { normalizeEd25519PublicKey } from './verify-certificate/keys.js';
 import { verifyEd25519 } from './verify-certificate/signature.js';
 import { verifyCertificate } from './verify-certificate/index.js';
-import { TheVeilCertificateError } from './errors.js';
+import { LucairnCertificateError } from './errors.js';
 import type { VeilCertificate, VerifyCertificateKeys } from './types.js';
 
 const fixturesDir = join(__dirname, 'verify-certificate', '__fixtures__');
@@ -231,8 +231,8 @@ describe('verifyCertificate — failure reasons', () => {
       });
       throw new Error('expected to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilCertificateError);
-      const typed = err as TheVeilCertificateError;
+      expect(err).toBeInstanceOf(LucairnCertificateError);
+      const typed = err as LucairnCertificateError;
       expect(typed.reason).toBe('invalid_signature');
       expect(typed.cause).toBeInstanceOf(TypeError);
     }
@@ -297,13 +297,13 @@ describe('verifyCertificate — ordering + error shape', () => {
     ).rejects.toMatchObject({ reason: 'unsupported_protocol_version' });
   });
 
-  it('TheVeilCertificateError.certificateId is populated when cert parses', async () => {
+  it('LucairnCertificateError.certificateId is populated when cert parses', async () => {
     try {
       await verifyCertificate(loadFixture('cert-tampered-payload.json'), keysAll());
       throw new Error('expected to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilCertificateError);
-      const typed = err as TheVeilCertificateError;
+      expect(err).toBeInstanceOf(LucairnCertificateError);
+      const typed = err as LucairnCertificateError;
       expect(typed.reason).toBe('invalid_signature');
       expect(typed.certificateId).toBe(
         loadFixture('cert-tampered-payload.json').certificate_id,
@@ -311,13 +311,13 @@ describe('verifyCertificate — ordering + error shape', () => {
     }
   });
 
-  it('TheVeilCertificateError.certificateId is undefined when cert fails structural parse', async () => {
+  it('LucairnCertificateError.certificateId is undefined when cert fails structural parse', async () => {
     try {
       await verifyCertificate('garbage' as unknown as VeilCertificate, keysAll());
       throw new Error('expected to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilCertificateError);
-      expect((err as TheVeilCertificateError).certificateId).toBeUndefined();
+      expect(err).toBeInstanceOf(LucairnCertificateError);
+      expect((err as LucairnCertificateError).certificateId).toBeUndefined();
     }
   });
 });
@@ -396,7 +396,7 @@ describe('verifyCertificate — bug-hunter C4/C5 gap fills', () => {
     });
   });
 
-  it('throws TypeError (not TheVeilCertificateError) on null keys argument', async () => {
+  it('throws TypeError (not LucairnCertificateError) on null keys argument', async () => {
     await expect(
       verifyCertificate(
         loadFixture('cert-valid-anchored.json'),
@@ -412,8 +412,8 @@ describe('verifyCertificate — bug-hunter C4/C5 gap fills', () => {
       await verifyCertificate(cert, keysAll());
       throw new Error('expected to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilCertificateError);
-      const typed = err as TheVeilCertificateError;
+      expect(err).toBeInstanceOf(LucairnCertificateError);
+      const typed = err as LucairnCertificateError;
       expect(typed.reason).toBe('malformed');
       expect(typed.message).toMatch(/claims is empty/);
     }
@@ -446,13 +446,13 @@ describe('verifyCertificate — bug-hunter C4/C5 gap fills', () => {
   });
 });
 
-describe('TheVeil#verifyCertificate client delegation', () => {
-  // Client-level smoke test — ensures the public method on TheVeil
+describe('Lucairn#verifyCertificate client delegation', () => {
+  // Client-level smoke test — ensures the public method on Lucairn
   // delegates to the standalone verify function without drift.
   it('delegates to verify-certificate/index and returns the same result shape', async () => {
     // Avoid cross-file import cycles by importing inline.
-    const { TheVeil } = await import('./client.js');
-    const client = new TheVeil({ apiKey: 'dsa_' + '0'.repeat(32) });
+    const { Lucairn } = await import('./client.js');
+    const client = new Lucairn({ apiKey: 'dsa_' + '0'.repeat(32) });
     const cert = loadFixture('cert-valid-anchored.json');
     const result = await client.verifyCertificate(cert, keysAll());
     expect(result.witnessKeyId).toBe('witness_v1');
