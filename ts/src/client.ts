@@ -5,6 +5,8 @@ import {
   LucairnTimeoutError,
 } from './errors.js';
 import type {
+  AuditExportResponse,
+  ListAuditEventsOptions,
   LucairnConfig,
   MessagesOptions,
   ProxyMessagesRequest,
@@ -275,6 +277,43 @@ export class Lucairn {
     // transport attempts JSON.parse and falls back to raw text on parse
     // failure (HTML is not valid JSON, so body is the raw string).
     return typeof body === 'string' ? body : String(body);
+  }
+
+  // List audit events for the calling customer from the gateway's
+  // GET /api/v1/audit/export endpoint. Query params:
+  //   days       — integer, server default 30, server max 90.
+  //   eventType  — maps to the `type` query parameter; optional.
+  // Citations: services/gateway/internal/api/audit_export.go:21-22 (defaults
+  // and max), audit_export.go:75 (eventType param), audit_export.go:91-99
+  // (response shape).
+  //
+  // Auth: x-api-key (same as the rest of the SDK). The gateway gates this
+  // endpoint on tier; callers whose tier doesn't include audit export receive
+  // 403 tier_insufficient. We do NOT replicate that gate client-side — the
+  // gateway is the truth source.
+  //
+  // 503 audit_export_unavailable, 400 invalid days, 401/403 auth errors all
+  // surface as LucairnHttpError verbatim.
+  async listAuditEvents(opts?: ListAuditEventsOptions): Promise<AuditExportResponse> {
+    const params = new URLSearchParams();
+    if (opts?.days !== undefined) {
+      params.set('days', String(opts.days));
+    }
+    if (opts?.eventType !== undefined) {
+      params.set('type', opts.eventType);
+    }
+    const query = params.toString();
+    const path = query.length > 0 ? `/api/v1/audit/export?${query}` : '/api/v1/audit/export';
+
+    const { body } = await this.request<AuditExportResponse>(
+      path,
+      { method: 'GET', headers: opts?.headers },
+      { timeoutMs: opts?.timeoutMs, signal: opts?.signal },
+    );
+    // Thin-transport rule: do NOT validate the body shape on the 2xx happy
+    // path. A wrong-shaped 200 passes through typed as AuditExportResponse;
+    // callers needing stricter guards can layer their own validation.
+    return body;
   }
 
   private async request<T>(
