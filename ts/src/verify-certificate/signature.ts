@@ -15,7 +15,7 @@ const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 // Node's crypto.verify with 'ed25519' mode requires a KeyObject; we build
 // one from the SPKI-wrapped raw key via createPublicKey. Returns a plain
 // boolean — the orchestrator layer is responsible for translating false
-// into a TheVeilCertificateError.
+// into a LucairnCertificateError.
 export function verifyEd25519(
   message: Uint8Array,
   signature: Uint8Array,

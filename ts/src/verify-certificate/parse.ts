@@ -1,14 +1,14 @@
-import { TheVeilCertificateError } from '../errors.js';
+import { LucairnCertificateError } from '../errors.js';
 import type { VeilCertificate, VeilVerificationResult } from '../types.js';
 
 // Structural validation — asserts the shape this arc reads. Does NOT
 // validate enum literal membership beyond "string" here (the signable
 // derivation layer throws `malformed` on unknown verdict literals, which
 // is where that check belongs semantically). Returns the narrowed type
-// on success or throws TheVeilCertificateError with reason 'malformed'.
+// on success or throws LucairnCertificateError with reason 'malformed'.
 export function parseCertificate(raw: unknown): VeilCertificate {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new TheVeilCertificateError('Certificate is not a JSON object', {
+    throw new LucairnCertificateError('Certificate is not a JSON object', {
       reason: 'malformed',
     });
   }
@@ -26,7 +26,7 @@ export function parseCertificate(raw: unknown): VeilCertificate {
     typeof cert.verification !== 'object' ||
     cert.verification === null
   ) {
-    throw new TheVeilCertificateError('Certificate missing required fields', {
+    throw new LucairnCertificateError('Certificate missing required fields', {
       reason: 'malformed',
       certificateId: certId,
     });
@@ -38,7 +38,7 @@ export function parseCertificate(raw: unknown): VeilCertificate {
   // cascade into a less-legible invalid_signature.
   const verif = cert.verification as Partial<VeilVerificationResult>;
   if (typeof verif.overall_verdict !== 'string') {
-    throw new TheVeilCertificateError(
+    throw new LucairnCertificateError(
       'verification.overall_verdict must be a string enum literal',
       { reason: 'malformed', certificateId: certId },
     );

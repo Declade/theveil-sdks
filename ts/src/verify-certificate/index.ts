@@ -1,4 +1,4 @@
-import { TheVeilCertificateError } from '../errors.js';
+import { LucairnCertificateError } from '../errors.js';
 import type {
   VeilCertificate,
   VerifyCertificateKeys,
@@ -30,19 +30,19 @@ const SUPPORTED_PROTOCOL_VERSION = 2;
  *   NOT fetch the certificate; the caller is responsible for transport.
  * @param keys.witnessKeyId - expected operator-configured label (e.g.
  *   "witness_v1") asserted against `cert.witness_key_id`. Mismatch throws
- *   `TheVeilCertificateError({ reason: 'witness_mismatch' })` before any
+ *   `LucairnCertificateError({ reason: 'witness_mismatch' })` before any
  *   signature check runs.
  * @param keys.witnessPublicKey - raw 32-byte Ed25519 public key as
  *   `Uint8Array`, OR a base64 string encoding those 32 bytes. NOT PEM
  *   SPKI. Malformed input surfaces as
- *   `TheVeilCertificateError({ reason: 'invalid_signature', cause })`.
+ *   `LucairnCertificateError({ reason: 'invalid_signature', cause })`.
  *
  * @returns `VerifyCertificateResult` on success. The witness-asserted
  *   issued-at appears in two forms: `witnessAssertedIssuedAt: Date`
  *   (millisecond precision, ergonomic) and `witnessAssertedIssuedAtIso:
  *   string` (full RFC 3339 precision, exactly as signed).
  *
- * @throws `TheVeilCertificateError` with one of 5 reasons:
+ * @throws `LucairnCertificateError` with one of 5 reasons:
  *   - `malformed` — cert shape invalid, or gateway invariant broken
  *     (cert.request_id mismatch vs claims[0]), or unknown verdict literal
  *   - `unsupported_protocol_version` — cert.protocol_version !== 2
@@ -60,7 +60,7 @@ export async function verifyCertificate(
   // this at compile time, but untyped JS callers, JSON-RPC bridges, and
   // cross-language embedders would otherwise see a raw "Cannot read
   // properties of null" TypeError. Surface it as TypeError (programmer
-  // error), not as TheVeilCertificateError — wrong input to the SDK is
+  // error), not as LucairnCertificateError — wrong input to the SDK is
   // not a cert-verification failure.
   if (keys === null || typeof keys !== 'object') {
     throw new TypeError('verifyCertificate: keys argument is required');
@@ -75,7 +75,7 @@ export async function verifyCertificate(
   // would otherwise silently fail invalid_signature; this surfaces the
   // "upgrade your SDK" intent loudly.
   if (cert.protocol_version !== SUPPORTED_PROTOCOL_VERSION) {
-    throw new TheVeilCertificateError(
+    throw new LucairnCertificateError(
       `Unsupported Veil protocol version: ${cert.protocol_version} (SDK supports ${SUPPORTED_PROTOCOL_VERSION})`,
       { reason: 'unsupported_protocol_version', certificateId: cert.certificate_id },
     );
@@ -83,7 +83,7 @@ export async function verifyCertificate(
 
   // Step 3: witness identity — cheap string check before any crypto work.
   if (cert.witness_key_id !== keys.witnessKeyId) {
-    throw new TheVeilCertificateError(
+    throw new LucairnCertificateError(
       `Witness key ID mismatch: cert has "${cert.witness_key_id}", expected "${keys.witnessKeyId}"`,
       { reason: 'witness_mismatch', certificateId: cert.certificate_id },
     );
@@ -93,7 +93,7 @@ export async function verifyCertificate(
   // signatures to the same reason — "   " base64-decodes to empty bytes
   // which would otherwise surface as a confusing invalid_signature.
   if (cert.witness_signature.trim().length === 0) {
-    throw new TheVeilCertificateError('Certificate has no witness signature', {
+    throw new LucairnCertificateError('Certificate has no witness signature', {
       reason: 'witness_signature_missing',
       certificateId: cert.certificate_id,
     });
@@ -118,9 +118,9 @@ export async function verifyCertificate(
   try {
     signedBytes = deriveWitnessSignedBytes(cert);
   } catch (err) {
-    if (err instanceof TheVeilCertificateError) throw err;
+    if (err instanceof LucairnCertificateError) throw err;
     if (err instanceof TypeError) {
-      throw new TheVeilCertificateError(
+      throw new LucairnCertificateError(
         `Failed to derive signed payload: ${err.message}`,
         { reason: 'malformed', certificateId: cert.certificate_id, cause: err },
       );
@@ -133,7 +133,7 @@ export async function verifyCertificate(
     valid = verifyEd25519(signedBytes, signatureBytes, keys.witnessPublicKey);
   } catch (err) {
     if (err instanceof TypeError) {
-      throw new TheVeilCertificateError(`Invalid witnessPublicKey: ${err.message}`, {
+      throw new LucairnCertificateError(`Invalid witnessPublicKey: ${err.message}`, {
         reason: 'invalid_signature',
         certificateId: cert.certificate_id,
         cause: err,
@@ -142,7 +142,7 @@ export async function verifyCertificate(
     throw err;
   }
   if (!valid) {
-    throw new TheVeilCertificateError('Witness Ed25519 signature verification failed', {
+    throw new LucairnCertificateError('Witness Ed25519 signature verification failed', {
       reason: 'invalid_signature',
       certificateId: cert.certificate_id,
     });
