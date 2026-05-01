@@ -32,7 +32,7 @@
 // serialization); the witness signs the short-form. The SDK must convert.
 
 import { canonicalJson, rawIntegerNumber } from './canonical-json.js';
-import { TheVeilCertificateError } from '../errors.js';
+import { LucairnCertificateError } from '../errors.js';
 import type { VeilCertificate, VeilVerdict } from '../types.js';
 
 // Null-prototype object so key lookups never hit Object.prototype. With a
@@ -56,7 +56,7 @@ export function deriveWitnessSignedBytes(cert: VeilCertificate): Uint8Array {
   // message talks about a mismatched request_id even though the real issue
   // is "no claims at all".
   if (cert.claims.length === 0) {
-    throw new TheVeilCertificateError(
+    throw new LucairnCertificateError(
       'cert.claims is empty — certificate must contain at least one claim',
       { reason: 'malformed', certificateId: cert.certificate_id },
     );
@@ -66,7 +66,7 @@ export function deriveWitnessSignedBytes(cert: VeilCertificate): Uint8Array {
   // on the first element would handle sparse-hole-at-index-0 cases too, but
   // those are separately rejected by the per-claim validator below.
   if (cert.claims[0]?.request_id !== cert.request_id) {
-    throw new TheVeilCertificateError(
+    throw new LucairnCertificateError(
       'cert.request_id does not match cert.claims[0].request_id (gateway invariant violated)',
       { reason: 'malformed', certificateId: cert.certificate_id },
     );
@@ -79,7 +79,7 @@ export function deriveWitnessSignedBytes(cert: VeilCertificate): Uint8Array {
   // object literal).
   const fullName = cert.verification.overall_verdict;
   if (!Object.hasOwn(VERDICT_FULL_TO_SHORT, fullName)) {
-    throw new TheVeilCertificateError(
+    throw new LucairnCertificateError(
       `Unknown verification.overall_verdict literal: ${fullName} — SDK may be out of date`,
       { reason: 'malformed', certificateId: cert.certificate_id },
     );
@@ -101,14 +101,14 @@ export function deriveWitnessSignedBytes(cert: VeilCertificate): Uint8Array {
   const claimIds: string[] = [];
   for (let i = 0; i < cert.claims.length; i++) {
     if (!(i in cert.claims)) {
-      throw new TheVeilCertificateError(
+      throw new LucairnCertificateError(
         `cert.claims[${i}] is a sparse-array hole`,
         { reason: 'malformed', certificateId: cert.certificate_id },
       );
     }
     const c = cert.claims[i];
     if (!c || typeof c.claim_id !== 'string') {
-      throw new TheVeilCertificateError(
+      throw new LucairnCertificateError(
         `cert.claims[${i}].claim_id must be a string`,
         { reason: 'malformed', certificateId: cert.certificate_id },
       );
