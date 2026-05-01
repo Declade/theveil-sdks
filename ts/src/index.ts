@@ -9,6 +9,9 @@ export {
 } from './errors.js';
 export type { VerifyCertificateFailureReason } from './errors.js';
 export type {
+  AuditEntry,
+  AuditExportResponse,
+  ListAuditEventsOptions,
   LucairnConfig,
   ProxyRequest,
   ProxyResponse,

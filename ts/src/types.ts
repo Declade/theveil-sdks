@@ -258,6 +258,52 @@ export interface VeilCertificate {
   client_id?: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Audit export — GET /api/v1/audit/export
+//
+// AuditEntry mirrors services/gateway/internal/audit/buffer.go:11 (`type Entry
+// struct`). Fields use snake_case wire names per the Go json tags. RequestID
+// is `request_id,omitempty` on the Go side and may be missing.
+//
+// AuditExportResponse mirrors services/gateway/internal/api/audit_export.go:91
+// (the response writeJSON map literal). The `period` string is rendered as
+// "YYYY-MM-DD to YYYY-MM-DD" by audit_export.go:88-89,94. `source` is one of
+// "audit_service", "audit_service+memory_buffer", "memory_buffer", or "none"
+// (audit_export.go:195-209).
+// ---------------------------------------------------------------------------
+
+export interface AuditEntry {
+  timestamp: string;       // RFC 3339 (Go time.Time JSON encoding)
+  event_type: string;
+  actor: string;
+  details: string;
+  request_id?: string;
+}
+
+export interface AuditExportResponse {
+  customer_id: string;
+  tier: string;
+  period: string;          // "YYYY-MM-DD to YYYY-MM-DD"
+  events: AuditEntry[];
+  total_events: number;
+  source: string;
+}
+
+// Per-call knobs for listAuditEvents(). All optional; the gateway is the
+// truth source for tier-gating and eventType allowlists, so the SDK does NOT
+// validate either client-side.
+export interface ListAuditEventsOptions {
+  // Lookback window in days. Server default 30, max 90 (rejected with 400 by
+  // the gateway when out of range). Citation: audit_export.go:21-22.
+  days?: number;
+  // Filter by event_type. Maps to the `type` query parameter. Citation:
+  // audit_export.go:75.
+  eventType?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  headers?: Record<string, string>;
+}
+
 export interface VerifyCertificateKeys {
   witnessKeyId: string;
   witnessPublicKey: Uint8Array | string; // raw 32B OR base64
