@@ -232,6 +232,51 @@ export class Lucairn {
     return body as VeilCertificate;
   }
 
+  // Fetch a DPO-friendly HTML summary of a Veil Certificate from the
+  // gateway's GET /api/v1/veil/certificate/{request_id}/summary endpoint.
+  // The endpoint always returns text/html with no JSON wrapper.
+  //
+  // Pending state: when the certificate is not yet assembled, the gateway
+  // returns 202 Accepted with a pending-summary HTML body. We surface that
+  // as LucairnHttpError{ status: 202, body: "<html>...</html>" } so the
+  // happy-path return type stays the rendered ready-to-display HTML and
+  // callers get an explicit retry signal on the error branch.
+  //
+  // Auth: same x-api-key header as getCertificate(). The gateway's
+  // authenticateAndAuthorize gate decides whether the caller's tier may
+  // read summaries — 401/403/404 errors flow through as LucairnHttpError
+  // verbatim.
+  async getCertificateSummary(
+    requestId: string,
+    options?: MessagesOptions,
+  ): Promise<string> {
+    // encodeURIComponent mirrors getCertificate(): the gateway extracts
+    // request_id from the path string between two known delimiters, but
+    // the SDK should never emit raw segment separators.
+    const encoded = encodeURIComponent(requestId);
+    const { status, body } = await this.request<unknown>(
+      `/api/v1/veil/certificate/${encoded}/summary`,
+      { method: 'GET', headers: options?.headers },
+      { timeoutMs: options?.timeoutMs, signal: options?.signal },
+    );
+
+    // 202 = pending-summary HTML returned by the gateway's
+    // renderPendingSummaryHTML path. Verified empirically against
+    // services/gateway/internal/api/veil.go:848 (WriteHeader(StatusAccepted)).
+    if (status === 202) {
+      throw new LucairnHttpError(
+        'Veil certificate summary is not yet ready; retry after a short delay.',
+        status,
+        body,
+      );
+    }
+
+    // The endpoint sets Content-Type: text/html. The shared request<T>
+    // transport attempts JSON.parse and falls back to raw text on parse
+    // failure (HTML is not valid JSON, so body is the raw string).
+    return typeof body === 'string' ? body : String(body);
+  }
+
   private async request<T>(
     path: string,
     init: RequestInit,
