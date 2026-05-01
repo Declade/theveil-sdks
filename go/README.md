@@ -16,12 +16,12 @@ go get github.com/declade/lucairn-sdks/go@latest
 
 Requires Go 1.22+.
 
-> **Stage 3 rebrand in progress.** The repo `Declade/theveil-sdks` is being
+> **Stage 3 rebrand in progress.** The Declade SDK monorepo is being
 > renamed to `Declade/lucairn-sdks`. GitHub auto-redirects old URLs for 12
-> months after rename, so `go get` continues to resolve via the redirect
-> until cutover. The old import path
-> `github.com/declade/theveil-sdks/go` is RETIRED and will not be
-> updated; new code should use the new path.
+> months after rename, so `go get` against the new path resolves via the
+> redirect until cutover. The previous import path under the legacy repo
+> name is RETIRED and will not be updated; new code should use the
+> path above.
 
 ## Quickstart
 
