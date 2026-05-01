@@ -154,4 +154,61 @@ describe('GatewayClient.sendMessage', () => {
       errorType: 'network_error',
     })
   })
+
+  it('handles 202 ASYNC_PROCESSING with retry-shortly error', async () => {
+    // Gateway shape per proxy_async.go:128-144: 202 + JSON envelope with
+    // status/job_id/request_id/status_url/veil — no Anthropic content[].
+    const asyncBody = {
+      status: 'processing',
+      job_id: 'job_abc',
+      request_id: 'req_xyz',
+      status_url: 'https://gateway.lucairn.eu/api/v1/jobs/job_abc',
+      veil: { compliance: 'pending' },
+    }
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(fakeResponse(202, JSON.stringify(asyncBody)))
+    const client = new GatewayClient({
+      apiKey: 'lcr_live_test',
+      baseUrl: 'https://gateway.lucairn.eu',
+      fetchImpl: fetchSpy,
+    })
+    await expect(client.sendMessage(baseInput)).rejects.toMatchObject({
+      name: 'GatewayError',
+      status: 202,
+      errorType: 'async_processing',
+    })
+  })
+
+  it('rejects 2xx with non-array content field as malformed_response', async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(fakeResponse(200, JSON.stringify({ content: 'not-an-array' })))
+    const client = new GatewayClient({
+      apiKey: 'lcr_live_test',
+      baseUrl: 'https://gateway.lucairn.eu',
+      fetchImpl: fetchSpy,
+    })
+    await expect(client.sendMessage(baseInput)).rejects.toMatchObject({
+      name: 'GatewayError',
+      status: 200,
+      errorType: 'malformed_response',
+    })
+  })
+
+  it('rejects 2xx with missing content field as malformed_response', async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(fakeResponse(200, JSON.stringify({ id: 'abc' })))
+    const client = new GatewayClient({
+      apiKey: 'lcr_live_test',
+      baseUrl: 'https://gateway.lucairn.eu',
+      fetchImpl: fetchSpy,
+    })
+    await expect(client.sendMessage(baseInput)).rejects.toMatchObject({
+      name: 'GatewayError',
+      status: 200,
+      errorType: 'malformed_response',
+    })
+  })
 })
