@@ -16,7 +16,7 @@ func tsFixturesDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	// cwd is theveil-sdks/go/internal/verify; the monorepo root is three up.
+	// cwd is <sdks-repo>/go/internal/verify; the monorepo root is three up.
 	root := filepath.Join(cwd, "..", "..", "..")
 	fixtures := filepath.Join(root, "ts", "src", "verify-certificate", "__fixtures__")
 	info, err := os.Stat(fixtures)

@@ -1,8 +1,12 @@
 // Package verify contains the Veil Certificate verification pipeline.
 //
 // It is byte-equivalent to the TS and Python ports:
-//   - theveil-sdks/ts/src/verify-certificate/canonical-json.ts
-//   - theveil-sdks/python/src/theveil/verify_certificate/canonical_json.py
+//   - <sdks-repo>/ts/src/verify-certificate/canonical-json.ts
+//   - <sdks-repo>/python/src/theveil/verify_certificate/canonical_json.py
+//
+// (The Python package is named `theveil` until the parallel Phase 2
+// Python-SDK rebrand workstream lands; cross-language parity tracking
+// uses the on-disk path of the moment.)
 //
 // All three descend from dual-sandbox-architecture/pkg/veil/canonical.go,
 // the server-side canonical used by the Veil Witness assembler.
