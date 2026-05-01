@@ -40,4 +40,4 @@ jobs:
       - name: Warm proxy.golang.org
         run: |
           TAG="${GITHUB_REF_NAME#go/}"
-          curl -fsSL "https://proxy.golang.org/github.com/declade/theveil-sdks/go/@v/${TAG}.info"
+          curl -fsSL "https://proxy.golang.org/github.com/declade/lucairn-sdks/go/@v/${TAG}.info"
