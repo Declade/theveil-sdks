@@ -1,10 +1,16 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import {
+  buildServer,
   CHAT_TOOL_DESCRIPTOR,
   CHAT_TOOL_NAME,
+  exceedsInputCap,
   formatToolResult,
+  MAX_INPUT_BYTES,
   parseChatToolArgs,
 } from '../src/server.js'
+import { GatewayClient } from '../src/gateway-client.js'
 import type { AnthropicResponseBody } from '../src/types.js'
 
 describe('CHAT_TOOL_DESCRIPTOR', () => {
@@ -110,5 +116,59 @@ describe('formatToolResult', () => {
   it('omits the certificate trailer when metadata is missing', () => {
     const out = formatToolResult(baseResp)
     expect(out.content[0].text).not.toContain('Lucairn certificate:')
+  })
+})
+
+describe('exceedsInputCap (TOB-005 soft input cap)', () => {
+  it('returns false for small inputs', () => {
+    expect(exceedsInputCap({ messages: [{ role: 'user', content: 'hi' }] })).toBe(false)
+  })
+
+  it('returns true for inputs > MAX_INPUT_BYTES', () => {
+    const huge = 'A'.repeat(MAX_INPUT_BYTES + 1)
+    expect(exceedsInputCap({ messages: [{ role: 'user', content: huge }] })).toBe(true)
+  })
+
+  it('returns false at the exact cap boundary', () => {
+    // Construct args whose JSON.stringify length is exactly MAX_INPUT_BYTES.
+    // The structure overhead is ~50 bytes; leave a small headroom so we
+    // don't accidentally exceed.
+    const filler = 'A'.repeat(MAX_INPUT_BYTES - 100)
+    expect(exceedsInputCap({ messages: [{ role: 'user', content: filler }] })).toBe(false)
+  })
+})
+
+describe('CallToolRequestSchema input cap (TOB-005 integration)', () => {
+  it('rejects oversized tool input without making a fetch call', async () => {
+    // Mock fetch — must NOT be called when args exceed the cap.
+    const fetchSpy = vi.fn().mockRejectedValue(new Error('fetch should not be called'))
+    const client = new GatewayClient({
+      apiKey: 'lcr_live_test',
+      baseUrl: 'https://gateway.lucairn.eu',
+      fetchImpl: fetchSpy,
+    })
+    const server = buildServer(client)
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    const mcpClient = new Client({ name: 'test-client', version: '0.0.1' }, { capabilities: {} })
+
+    await Promise.all([server.connect(serverTransport), mcpClient.connect(clientTransport)])
+
+    const huge = 'A'.repeat(2_000_000)
+    const result = (await mcpClient.callTool({
+      name: CHAT_TOOL_NAME,
+      arguments: {
+        model: 'claude-sonnet-4-6',
+        max_tokens: 256,
+        messages: [{ role: 'user', content: huge }],
+      },
+    })) as { isError?: boolean; content: Array<{ type: string; text: string }> }
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('exceeds max size')
+    expect(fetchSpy).not.toHaveBeenCalled()
+
+    await mcpClient.close()
+    await server.close()
   })
 })

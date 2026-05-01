@@ -37,6 +37,23 @@ export interface ServerOptions {
 /** Tool name exposed to MCP clients. */
 export const CHAT_TOOL_NAME = 'chat_via_lucairn'
 
+/**
+ * Soft input cap for chat_via_lucairn arguments (TOB-005). Bounds the
+ * local-memory JSON.stringify cost before any network shipping. The
+ * gateway has its own per-key limits; this is purely a client-side
+ * safety net against a buggy or malicious MCP client.
+ */
+export const MAX_INPUT_BYTES = 1 * 1024 * 1024
+
+/**
+ * Returns true when the JSON-stringified args exceed MAX_INPUT_BYTES.
+ * Exported separately from the request-handler closure so unit tests
+ * can drive the cap check without spinning up an MCP transport.
+ */
+export function exceedsInputCap(args: unknown): boolean {
+  return JSON.stringify(args ?? {}).length > MAX_INPUT_BYTES
+}
+
 /** Static MCP tool descriptor for chat_via_lucairn. */
 export const CHAT_TOOL_DESCRIPTOR = {
   name: CHAT_TOOL_NAME,
@@ -193,6 +210,21 @@ export function buildServer(client: GatewayClient): Server {
         isError: true,
         content: [
           { type: 'text', text: `Unknown tool: ${name}` },
+        ],
+      }
+    }
+    // Soft input cap (TOB-005): a malicious or buggy MCP client could
+    // hand a 100MB messages[] and we'd JSON.stringify it before any
+    // network shipping. Bound local memory at 1 MiB and surface a
+    // structured tool error instead of crashing the process.
+    if (exceedsInputCap(args)) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `Tool input exceeds max size (${MAX_INPUT_BYTES} bytes). Reduce messages[] or system prompt size.`,
+          },
         ],
       }
     }
