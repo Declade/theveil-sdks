@@ -1,0 +1,59 @@
+{
+  "name": "@lucairn/mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for Lucairn — privacy-preserving AI gateway",
+  "license": "MIT",
+  "author": "Declade",
+  "homepage": "https://lucairn.eu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Declade/theveil-sdks.git",
+    "directory": "mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/Declade/theveil-sdks/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude-desktop",
+    "privacy",
+    "gdpr",
+    "llm",
+    "ai",
+    "pii",
+    "lucairn"
+  ],
+  "type": "module",
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "bin": {
+    "lucairn-mcp-server": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "private": false
+}
