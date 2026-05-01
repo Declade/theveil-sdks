@@ -25,7 +25,7 @@ type Result struct {
 	OverallVerdict string
 }
 
-// FailureReason matches theveil.VerifyCertificateFailureReason literals.
+// FailureReason matches lucairn.VerifyCertificateFailureReason literals.
 // Using raw strings here so internal/verify has no import cycle with the
 // parent package.
 type FailureReason string
@@ -39,7 +39,7 @@ const (
 )
 
 // PipelineError is the typed error returned by Run. The parent package
-// rewraps it as theveil.CertificateError for external callers.
+// rewraps it as lucairn.CertificateError for external callers.
 type PipelineError struct {
 	Reason        FailureReason
 	CertificateID string
