@@ -246,6 +246,15 @@ func (c *Client) GetCertificate(ctx context.Context, requestID string, opts ...C
 //     errors.As(err, &httpErr) && httpErr.Status == 202.
 //   - 503 from the gateway when veil-witness is temporarily unavailable
 //     surfaces as an *HTTPError with Status=503.
+//
+// Security: the returned HTML is server-rendered on the gateway and
+// contains fields derived from the original request payload. Callers
+// MUST NOT pipe the return value directly into `w.Write([]byte(summary))`,
+// `template.HTML(summary)`, or any other unsanitized HTML sink. Render
+// only inside a sandboxed `<iframe sandbox="">` or after passing through
+// a trusted sanitizer (e.g. `bluemonday.UGCPolicy()`). The SDK is a thin
+// transport — it does not sanitize on the client side. Same rationale
+// as the TS SDK Phase 1 fix-up (TOB-001).
 func (c *Client) GetCertificateSummary(ctx context.Context, requestID string, opts ...CallOption) (string, error) {
 	if requestID == "" {
 		return "", &ConfigError{Message: "requestID must be non-empty"}
