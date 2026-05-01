@@ -65,3 +65,19 @@ def test_shim_legacy_construction_works() -> None:
     assert isinstance(client, shim.TheVeil)
     # Sanity: the client is usable through the shim alias.
     assert client.base_url.startswith("https://")
+
+
+def test_shim_reexports_phase_2_helpers() -> None:
+    """Phase 2 added four public symbols (`get_client_id` + audit types).
+    The legacy shim must re-export them so existing `from theveil import
+    ...` callers can adopt the new gateway features without first
+    migrating their import statements.
+    """
+
+    shim = _reimport_shim()
+    import lucairn
+
+    assert shim.get_client_id is lucairn.get_client_id
+    assert shim.AuditEntry is lucairn.AuditEntry
+    assert shim.AuditExportOptions is lucairn.AuditExportOptions
+    assert shim.AuditExportResponse is lucairn.AuditExportResponse

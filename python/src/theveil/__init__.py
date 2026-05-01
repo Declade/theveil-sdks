@@ -46,6 +46,9 @@ from lucairn import (  # noqa: F401, E402
 
 # Re-export the unchanged identifiers verbatim.
 from lucairn import (  # noqa: F401, E402
+    AuditEntry,
+    AuditExportOptions,
+    AuditExportResponse,
     MessagesOptions,
     ProxyAcceptedResponse,
     ProxyMessagesRequest,
@@ -62,9 +65,13 @@ from lucairn import (  # noqa: F401, E402
     VerifyCertificateFailureReason,
     VerifyCertificateKeys,
     VerifyCertificateResult,
+    get_client_id,
 )
 
 __all__ = [
+    "AuditEntry",
+    "AuditExportOptions",
+    "AuditExportResponse",
     "MessagesOptions",
     "ProxyAcceptedResponse",
     "ProxyMessagesRequest",
@@ -89,6 +96,7 @@ __all__ = [
     "VerifyCertificateFailureReason",
     "VerifyCertificateKeys",
     "VerifyCertificateResult",
+    "get_client_id",
 ]
 
 __version__ = "1.0.0"
