@@ -8,11 +8,20 @@ Client for **Lucairn** — privacy-preserving AI gateway.
 observable level. See the [monorepo README](../README.md) for the full SDK
 index.
 
-The package was previously published as `theveil` (pre-1.0). A legacy
-`theveil` import shim is included in this release that re-exports every
-public symbol under its old name (`TheVeil`, `TheVeilConfig`, etc.) and
-emits a `DeprecationWarning` at import time. Update your imports to the
-new names below; the shim will be removed in a future release.
+Migration from the previous release: the package was previously
+published under a different name (pre-1.0). For one minor-version cycle,
+an in-tree compatibility shim re-exports every public symbol under its
+previous name and emits a `DeprecationWarning` on import. To migrate,
+change your imports to the new top-level names — the rename map and an
+example are below.
+
+```python
+# old (still works for one minor cycle, with DeprecationWarning):
+from theveil import TheVeil, TheVeilConfig
+
+# new:
+from lucairn import Lucairn, LucairnConfig
+```
 
 ## Install
 
