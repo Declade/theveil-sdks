@@ -1,12 +1,18 @@
-# theveil — Python SDK
+# lucairn — Python SDK
 
-Client for **The Veil** — privacy-preserving AI infrastructure.
+Client for **Lucairn** — privacy-preserving AI gateway.
 
 ## Status
 
-Pre-1.0 (0.1.0). Ships alongside the TypeScript SDK's `0.2.0` and behaves
-identically at the observable level. See the [monorepo
-README](../README.md) for the full SDK index.
+`1.0.0`. Ships alongside the TypeScript SDK and behaves identically at the
+observable level. See the [monorepo README](../README.md) for the full SDK
+index.
+
+The package was previously published as `theveil` (pre-1.0). A legacy
+`theveil` import shim is included in this release that re-exports every
+public symbol under its old name (`TheVeil`, `TheVeilConfig`, etc.) and
+emits a `DeprecationWarning` at import time. Update your imports to the
+new names below; the shim will be removed in a future release.
 
 ## Install
 
@@ -19,11 +25,11 @@ Requires Python 3.10+.
 ## Quickstart
 
 ```python
-from theveil import TheVeil, TheVeilConfig, VerifyCertificateKeys
+from lucairn import Lucairn, LucairnConfig, VerifyCertificateKeys
 
-client = TheVeil(TheVeilConfig(api_key="dsa_..."))
+client = Lucairn(LucairnConfig(api_key="dsa_..."))
 
-# Proxy a prompt through the Veil gateway (split-knowledge routing).
+# Proxy a prompt through the Lucairn gateway (split-knowledge routing).
 response = client.messages({
     "prompt_template": "Summarize the following in one sentence: {text}",
     "context": {"text": "Long input..."},
@@ -31,7 +37,7 @@ response = client.messages({
     "max_tokens": 256,
 })
 
-# Fetch the Veil Certificate for a known request_id (Pro+/Enterprise tier).
+# Fetch the Veil Certificate for a known request_id (Pro / Enterprise tier).
 cert = client.get_certificate("req_abc123")
 
 # Verify the witness Ed25519 signature against pinned trust-root keys.
@@ -45,13 +51,13 @@ print(result.overall_verdict, result.anchor_status)
 
 ## Public API
 
-### `TheVeil(config: TheVeilConfig)`
+### `Lucairn(config: LucairnConfig)`
 
 Constructor validates every input up front:
 
 - `api_key` must match `^dsa_[0-9a-f]{32}$`.
 - `base_url` must be `http://` or `https://`; defaults to
-  `https://gateway.dsaveil.io`.
+  `https://gateway.lucairn.eu`.
 - `timeout` must be a positive finite number of **seconds** (default `30.0`).
   TS SDK equivalent is `timeoutMs` (milliseconds) — Python uses seconds to
   match `httpx` / `requests` / `openai-python` / `anthropic-python`.
@@ -69,18 +75,45 @@ POST to `/api/v1/proxy/messages`. Returns a discriminated union:
 GET `/api/v1/veil/certificate/{request_id}`. Happy-path returns a
 `VeilCertificate`. Gateway-side pending (certificate not yet assembled, or
 unknown request_id — the gateway does not distinguish) surfaces as
-`TheVeilHttpError` with `status=202` and a body
+`LucairnHttpError` with `status=202` and a body
 `{"status": "pending", "retry_after_seconds": 30, ...}` so the happy-path
 return stays narrow. Inspect `err.body["retry_after_seconds"]` for the
 retry signal.
 
 No auto-verification — chain `client.verify_certificate()` explicitly.
 
+### `client.get_certificate_summary(request_id, options=None)`
+
+GET `/api/v1/veil/certificate/{request_id}/summary`. Returns the
+DPO-friendly HTML summary as a UTF-8 `str`. Per the gateway source the
+pending case renders an HTML body at HTTP 200 (not a 202 wrapper), so
+the SDK passes the rendered HTML straight back to the caller.
+
+### `client.list_audit_events(opts=None)`
+
+GET `/api/v1/audit/export`. Returns an `AuditExportResponse` with the
+customer's audit events for the requested lookback window:
+
+```python
+from lucairn import AuditExportOptions
+
+resp = client.list_audit_events(AuditExportOptions(days=7, type="proxy.completed"))
+print(resp.tier, resp.total_events)
+for e in resp.events:
+    print(e.timestamp, e.event_type, e.request_id)
+```
+
+- `days`: int 1..90 (gateway default 30, max 90).
+- `type`: optional event-type filter.
+- 503 `audit_export_unavailable` (tier-gated; not enabled for the calling
+  customer) raises `LucairnHttpError` with `err.status == 503` and
+  `err.body["code"] == "audit_export_unavailable"`.
+
 ### `client.verify_certificate(cert, keys)`
 
 Verify a certificate's witness Ed25519 signature against the certificate's
 canonical-JSON signed subset. Returns `VerifyCertificateResult` on success.
-Raises `TheVeilCertificateError` with one of five reasons on failure:
+Raises `LucairnCertificateError` with one of five reasons on failure:
 
 | reason                            | condition                                                            |
 |-----------------------------------|----------------------------------------------------------------------|
@@ -93,23 +126,31 @@ Raises `TheVeilCertificateError` with one of five reasons on failure:
 External RFC 3161 timestamp + Sigstore Rekor transparency-log verification
 are out of scope for this release (pending upstream gateway fixes).
 
+### `lucairn.get_client_id(cert)`
+
+Module-level helper returning `cert.client_id` (the org-scoped
+correlation field added by W2A-B1) or `None` if the certificate predates
+the change. The field is unsigned metadata at the witness signable
+layer — tamper evidence flows indirectly through the bridge claim's
+bridge-signed `canonical_payload`.
+
 ## Error hierarchy
 
-All SDK errors inherit from `TheVeilError`:
+All SDK errors inherit from `LucairnError`:
 
-- `TheVeilConfigError` — bad constructor input or per-call option.
-- `TheVeilHttpError` — gateway returned non-2xx (or 202 from
+- `LucairnConfigError` — bad constructor input or per-call option.
+- `LucairnHttpError` — gateway returned non-2xx (or 202 from
   `get_certificate`); exposes `.status` and `.body`.
-- `TheVeilResponseValidationError` — gateway returned 2xx but the body
+- `LucairnResponseValidationError` — gateway returned 2xx but the body
   doesn't fit the declared response type (typically a gateway bug or
   version skew); exposes `.body` (raw response). The underlying
   `pydantic.ValidationError` or `ValueError` is preserved on
   `__cause__` for field-level inspection.
-- `TheVeilTimeoutError` — request exceeded timeout.
-- `TheVeilCertificateError` — `verify_certificate` failed; exposes
+- `LucairnTimeoutError` — request exceeded timeout.
+- `LucairnCertificateError` — `verify_certificate` failed; exposes
   `.reason` and (when available) `.certificate_id`.
 
-Catch `TheVeilError` to handle all SDK errors uniformly.
+Catch `LucairnError` to handle all SDK errors uniformly.
 
 ## Behavioural parity with TS
 
@@ -126,8 +167,8 @@ Intentional divergences where TS semantics don't port cleanly to Python:
 - **Malformed 2xx body**: TS passes through as raw text typed as
   `VeilCertificate` (thin transport); Python calls
   `VeilCertificate.model_validate` and, on a shape mismatch, raises
-  the dedicated `TheVeilResponseValidationError` — NOT
-  `TheVeilHttpError`. The Python class follows the established
+  the dedicated `LucairnResponseValidationError` — NOT
+  `LucairnHttpError`. The Python class follows the established
   Python-SDK precedent (`openai.APIResponseValidationError`,
   `anthropic.APIResponseValidationError`): an HTTP 200 is not an HTTP
   error, and callers benefit from being able to catch "transport
@@ -147,7 +188,7 @@ Intentional divergences where TS semantics don't port cleanly to Python:
 - **Literal JSON null body**: when the gateway returns a 2xx with the
   literal `null` payload, the parsed body is Python `None`; the SDK
   falls back to the raw pre-parse text (`"null"`) for
-  `TheVeilResponseValidationError.body` so callers can distinguish
+  `LucairnResponseValidationError.body` so callers can distinguish
   "gateway sent null" from "SDK forgot to populate the error body."
 
 ## Development
