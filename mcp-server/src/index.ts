@@ -15,12 +15,16 @@
  */
 import { startStdioServer } from './server.js'
 
-const apiKey = process.env.DSA_API_KEY ?? process.env.LUCAIRN_API_KEY
+// `||` (not `??`) so that an explicitly-set empty string falls through
+// to the next candidate. With `??`, DSA_API_KEY="" would mask a
+// LUCAIRN_API_KEY="lcr_live_..." and the server would die with a
+// confusing "missing key" error.
+const apiKey = process.env.DSA_API_KEY || process.env.LUCAIRN_API_KEY
 const baseUrl =
-  process.env.DSA_GATEWAY_URL ??
-  process.env.LUCAIRN_BASE_URL ??
+  process.env.DSA_GATEWAY_URL ||
+  process.env.LUCAIRN_BASE_URL ||
   'https://gateway.lucairn.eu'
-const upstreamKey = process.env.ANTHROPIC_API_KEY ?? undefined
+const upstreamKey = process.env.ANTHROPIC_API_KEY || undefined
 
 if (!apiKey) {
   // eslint-disable-next-line no-console
