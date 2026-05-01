@@ -1,11 +1,11 @@
 import { inspect } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TheVeil } from './client.js';
+import { Lucairn } from './client.js';
 import {
-  TheVeilConfigError,
-  TheVeilError,
-  TheVeilHttpError,
-  TheVeilTimeoutError,
+  LucairnConfigError,
+  LucairnError,
+  LucairnHttpError,
+  LucairnTimeoutError,
 } from './errors.js';
 
 const VALID_KEY = 'dsa_0123456789abcdef0123456789abcdef';
@@ -15,91 +15,91 @@ const VALID_KEY = 'dsa_0123456789abcdef0123456789abcdef';
 type Internal = {
   request: <T>(path: string, init: RequestInit) => Promise<T>;
 };
-const asInternal = (client: TheVeil): Internal => client as unknown as Internal;
+const asInternal = (client: Lucairn): Internal => client as unknown as Internal;
 
-describe('TheVeil constructor — apiKey validation', () => {
+describe('Lucairn constructor — apiKey validation', () => {
   it('accepts a well-formed dsa_ key', () => {
     // The key is stored on a private field (#apiKey), so we cannot — and
     // intentionally must not — assert on a read-back here. Successful
     // construction (no throw) is the whole observable contract.
-    expect(() => new TheVeil({ apiKey: VALID_KEY })).not.toThrow();
+    expect(() => new Lucairn({ apiKey: VALID_KEY })).not.toThrow();
   });
 
   it('rejects a key with the wrong prefix', () => {
-    expect(() => new TheVeil({ apiKey: 'sk_0123456789abcdef0123456789abcdef' })).toThrow(
-      TheVeilConfigError,
+    expect(() => new Lucairn({ apiKey: 'sk_0123456789abcdef0123456789abcdef' })).toThrow(
+      LucairnConfigError,
     );
   });
 
   it('rejects a key with the wrong length', () => {
-    expect(() => new TheVeil({ apiKey: 'dsa_0123456789abcdef' })).toThrow(TheVeilConfigError);
+    expect(() => new Lucairn({ apiKey: 'dsa_0123456789abcdef' })).toThrow(LucairnConfigError);
   });
 
   it('rejects a key that contains uppercase hex', () => {
-    expect(() => new TheVeil({ apiKey: 'dsa_ABCDEF0123456789ABCDEF0123456789' })).toThrow(
-      TheVeilConfigError,
+    expect(() => new Lucairn({ apiKey: 'dsa_ABCDEF0123456789ABCDEF0123456789' })).toThrow(
+      LucairnConfigError,
     );
   });
 
   it('rejects a non-string apiKey', () => {
     // @ts-expect-error — exercising runtime guard against mis-typed input.
-    expect(() => new TheVeil({ apiKey: undefined })).toThrow(TheVeilConfigError);
+    expect(() => new Lucairn({ apiKey: undefined })).toThrow(LucairnConfigError);
   });
 });
 
-describe('TheVeil constructor — defaults and baseUrl', () => {
+describe('Lucairn constructor — defaults and baseUrl', () => {
   it('applies the default baseUrl when none is supplied', () => {
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     expect(client.baseUrl).toBe('https://gateway.dsaveil.io');
   });
 
   it('applies the default timeoutMs when none is supplied', () => {
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     expect(client.timeoutMs).toBe(30_000);
   });
 
   it('accepts a valid baseUrl and strips trailing slashes', () => {
-    const client = new TheVeil({ apiKey: VALID_KEY, baseUrl: 'https://vault.example.com/' });
+    const client = new Lucairn({ apiKey: VALID_KEY, baseUrl: 'https://vault.example.com/' });
     expect(client.baseUrl).toBe('https://vault.example.com');
   });
 
   it('strips trailing slashes even when caller omits baseUrl (default path)', () => {
     // Defense-in-depth: default is already well-formed; assert the normalize
     // step runs regardless of where the baseUrl came from.
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     expect(client.baseUrl.endsWith('/')).toBe(false);
   });
 
   it('rejects an invalid baseUrl', () => {
-    expect(() => new TheVeil({ apiKey: VALID_KEY, baseUrl: 'not a url' })).toThrow(
-      TheVeilConfigError,
+    expect(() => new Lucairn({ apiKey: VALID_KEY, baseUrl: 'not a url' })).toThrow(
+      LucairnConfigError,
     );
   });
 
   it('rejects a non-positive timeoutMs', () => {
-    expect(() => new TheVeil({ apiKey: VALID_KEY, timeoutMs: 0 })).toThrow(TheVeilConfigError);
-    expect(() => new TheVeil({ apiKey: VALID_KEY, timeoutMs: -1 })).toThrow(TheVeilConfigError);
-    expect(() => new TheVeil({ apiKey: VALID_KEY, timeoutMs: Number.NaN })).toThrow(
-      TheVeilConfigError,
+    expect(() => new Lucairn({ apiKey: VALID_KEY, timeoutMs: 0 })).toThrow(LucairnConfigError);
+    expect(() => new Lucairn({ apiKey: VALID_KEY, timeoutMs: -1 })).toThrow(LucairnConfigError);
+    expect(() => new Lucairn({ apiKey: VALID_KEY, timeoutMs: Number.NaN })).toThrow(
+      LucairnConfigError,
     );
   });
 });
 
-describe('TheVeil constructor — baseUrl scheme guard', () => {
+describe('Lucairn constructor — baseUrl scheme guard', () => {
   it('rejects a file:// URL', () => {
-    expect(() => new TheVeil({ apiKey: VALID_KEY, baseUrl: 'file:///etc/passwd' })).toThrow(
-      TheVeilConfigError,
+    expect(() => new Lucairn({ apiKey: VALID_KEY, baseUrl: 'file:///etc/passwd' })).toThrow(
+      LucairnConfigError,
     );
   });
 
   it('rejects a javascript: URL', () => {
-    expect(() => new TheVeil({ apiKey: VALID_KEY, baseUrl: 'javascript:alert(1)' })).toThrow(
-      TheVeilConfigError,
+    expect(() => new Lucairn({ apiKey: VALID_KEY, baseUrl: 'javascript:alert(1)' })).toThrow(
+      LucairnConfigError,
     );
   });
 });
 
-describe('TheVeil.request() — header merge', () => {
+describe('Lucairn.request() — header merge', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -116,7 +116,7 @@ describe('TheVeil.request() — header merge', () => {
       );
     });
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     await asInternal(client).request('/health', {
       headers: {
         'X-Api-Key': 'wrong-key',
@@ -141,12 +141,12 @@ describe('TheVeil.request() — header merge', () => {
   });
 });
 
-describe('TheVeil.request() — error wrapping', () => {
+describe('Lucairn.request() — error wrapping', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('wraps an AbortError from fetch into TheVeilTimeoutError', async () => {
+  it('wraps an AbortError from fetch into LucairnTimeoutError', async () => {
     vi.stubGlobal('fetch', (_url: string, init: RequestInit) => {
       return new Promise((_resolve, reject) => {
         init.signal?.addEventListener('abort', () => {
@@ -157,31 +157,31 @@ describe('TheVeil.request() — error wrapping', () => {
       });
     });
 
-    const client = new TheVeil({ apiKey: VALID_KEY, timeoutMs: 5 });
+    const client = new Lucairn({ apiKey: VALID_KEY, timeoutMs: 5 });
     await expect(asInternal(client).request('/slow', {})).rejects.toSatisfy(
-      (err) => err instanceof TheVeilTimeoutError && err instanceof TheVeilError,
+      (err) => err instanceof LucairnTimeoutError && err instanceof LucairnError,
     );
   });
 
-  it('wraps a generic fetch rejection in TheVeilError and preserves cause', async () => {
+  it('wraps a generic fetch rejection in LucairnError and preserves cause', async () => {
     const underlying = new TypeError('network failure');
     vi.stubGlobal('fetch', () => Promise.reject(underlying));
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await asInternal(client).request('/x', {});
       expect.fail('expected request to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilError);
-      expect(err).not.toBeInstanceOf(TheVeilTimeoutError);
-      expect((err as TheVeilError).cause).toBe(underlying);
+      expect(err).toBeInstanceOf(LucairnError);
+      expect(err).not.toBeInstanceOf(LucairnTimeoutError);
+      expect((err as LucairnError).cause).toBe(underlying);
     }
   });
 
-  it('surfaces a non-2xx response as TheVeilHttpError without re-wrapping via the generic catch', async () => {
-    // Invariant: the `err instanceof TheVeilError` guard in request()'s catch
-    // block must rethrow TheVeilHttpError unchanged. If a future refactor drops
-    // that guard, HTTP errors would be wrapped in TheVeilError('Request failed')
+  it('surfaces a non-2xx response as LucairnHttpError without re-wrapping via the generic catch', async () => {
+    // Invariant: the `err instanceof LucairnError` guard in request()'s catch
+    // block must rethrow LucairnHttpError unchanged. If a future refactor drops
+    // that guard, HTTP errors would be wrapped in LucairnError('Request failed')
     // with the HttpError moved onto `.cause` — this test is the tripwire.
     const upstreamBody = { error: 'upstream failed' };
     vi.stubGlobal('fetch', () =>
@@ -194,14 +194,14 @@ describe('TheVeil.request() — error wrapping', () => {
       ),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await asInternal(client).request('/boom', {});
       expect.fail('expected request to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilHttpError);
-      expect(err).not.toBeInstanceOf(TheVeilTimeoutError);
-      const httpErr = err as TheVeilHttpError;
+      expect(err).toBeInstanceOf(LucairnHttpError);
+      expect(err).not.toBeInstanceOf(LucairnTimeoutError);
+      const httpErr = err as LucairnHttpError;
       expect(httpErr.status).toBe(500);
       expect(httpErr.body).toEqual(upstreamBody);
       // The invariant: the generic catch must NOT have re-wrapped this error,
@@ -211,19 +211,19 @@ describe('TheVeil.request() — error wrapping', () => {
   });
 });
 
-describe('TheVeil — apiKey hiding', () => {
+describe('Lucairn — apiKey hiding', () => {
   // The key is held on a JS private class field (#apiKey). These three tests
   // pin the three observable consequences of that choice; a future regression
   // (e.g. someone re-adding a `public readonly apiKey` shim or a `toJSON`
   // getter) will fail at least one of them.
   it('does not include the apiKey in JSON.stringify output', () => {
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const serialized = JSON.stringify(client);
     expect(serialized).not.toContain(VALID_KEY);
   });
 
   it('does not include the apiKey in util.inspect output', () => {
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     // showHidden surfaces non-enumerable own props; private class fields are
     // still excluded by spec, so this is the strictest practical check.
     const inspected = inspect(client, { showHidden: true, depth: null });
@@ -231,7 +231,7 @@ describe('TheVeil — apiKey hiding', () => {
   });
 
   it('does not expose apiKey as an instance property at the type level', () => {
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     // Structural checks come first: a regression that re-adds
     // `public readonly apiKey` would fail these BEFORE any read of the
     // property, so the actual key value never reaches the test output as

@@ -2,11 +2,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { delay, http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { TheVeil } from './client.js';
+import { Lucairn } from './client.js';
 import {
-  TheVeilError,
-  TheVeilHttpError,
-  TheVeilTimeoutError,
+  LucairnError,
+  LucairnHttpError,
+  LucairnTimeoutError,
 } from './errors.js';
 import { server } from './test-server.js';
 import type { VeilCertificate } from './types.js';
@@ -26,14 +26,14 @@ function loadCert(name: string): VeilCertificate {
   return JSON.parse(readFileSync(join(fixturesDir, name), 'utf8')) as VeilCertificate;
 }
 
-describe('TheVeil.getCertificate() — happy path (200)', () => {
+describe('Lucairn.getCertificate() — happy path (200)', () => {
   it('returns the VeilCertificate body deep-equal to the gateway payload', async () => {
     const fixture = loadCert('cert-valid-anchored.json');
     server.use(
       http.get(`${CERT_URL_PREFIX}:id`, () => HttpResponse.json(fixture)),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     const cert = await client.getCertificate(fixture.request_id);
 
     expect(cert).toEqual(fixture);
@@ -53,7 +53,7 @@ describe('TheVeil.getCertificate() — happy path (200)', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     await client.getCertificate('req_test_0000000000000001');
 
     expect(capturedUrl).toBe(`${CERT_URL_PREFIX}req_test_0000000000000001`);
@@ -61,8 +61,8 @@ describe('TheVeil.getCertificate() — happy path (200)', () => {
   });
 });
 
-describe('TheVeil.getCertificate() — 202 pending', () => {
-  it('throws TheVeilHttpError with .status=202 and the pending wrapper body', async () => {
+describe('Lucairn.getCertificate() — 202 pending', () => {
+  it('throws LucairnHttpError with .status=202 and the pending wrapper body', async () => {
     const pendingBody = {
       status: 'pending' as const,
       request_id: 'req_pending_0001',
@@ -75,13 +75,13 @@ describe('TheVeil.getCertificate() — 202 pending', () => {
       ),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await client.getCertificate('req_pending_0001');
-      expect.fail('expected 202 pending to throw TheVeilHttpError');
+      expect.fail('expected 202 pending to throw LucairnHttpError');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilHttpError);
-      const httpErr = err as TheVeilHttpError;
+      expect(err).toBeInstanceOf(LucairnHttpError);
+      const httpErr = err as LucairnHttpError;
       expect(httpErr.status).toBe(202);
       expect(httpErr.body).toEqual(pendingBody);
       expect((httpErr.body as Record<string, unknown>).status).toBe('pending');
@@ -90,7 +90,7 @@ describe('TheVeil.getCertificate() — 202 pending', () => {
   });
 });
 
-describe('TheVeil.getCertificate() — HTTP error mapping', () => {
+describe('Lucairn.getCertificate() — HTTP error mapping', () => {
   const cases: Array<{ status: number; label: string; body: Record<string, unknown> }> = [
     {
       status: 401,
@@ -124,21 +124,21 @@ describe('TheVeil.getCertificate() — HTTP error mapping', () => {
   ];
 
   for (const { status, label, body } of cases) {
-    it(`maps ${status} ${label} to TheVeilHttpError with matching status and body`, async () => {
+    it(`maps ${status} ${label} to LucairnHttpError with matching status and body`, async () => {
       server.use(
         http.get(`${CERT_URL_PREFIX}:id`, () =>
           HttpResponse.json(body, { status }),
         ),
       );
 
-      const client = new TheVeil({ apiKey: VALID_KEY });
+      const client = new Lucairn({ apiKey: VALID_KEY });
       try {
         await client.getCertificate('req_err_0001');
-        expect.fail(`expected ${status} to throw TheVeilHttpError`);
+        expect.fail(`expected ${status} to throw LucairnHttpError`);
       } catch (err) {
-        expect(err).toBeInstanceOf(TheVeilHttpError);
-        expect(err).toBeInstanceOf(TheVeilError);
-        const httpErr = err as TheVeilHttpError;
+        expect(err).toBeInstanceOf(LucairnHttpError);
+        expect(err).toBeInstanceOf(LucairnError);
+        const httpErr = err as LucairnHttpError;
         expect(httpErr.status).toBe(status);
         expect(httpErr.body).toEqual(body);
         expect(
@@ -162,13 +162,13 @@ describe('TheVeil.getCertificate() — HTTP error mapping', () => {
       ),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await client.getCertificate('req_unavailable_0001');
       expect.fail('expected 503 to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilHttpError);
-      const httpErr = err as TheVeilHttpError;
+      expect(err).toBeInstanceOf(LucairnHttpError);
+      const httpErr = err as LucairnHttpError;
       expect(httpErr.status).toBe(503);
       expect(
         ((httpErr.body as Record<string, Record<string, unknown>>).error).retry_after_seconds,
@@ -177,23 +177,23 @@ describe('TheVeil.getCertificate() — HTTP error mapping', () => {
   });
 });
 
-describe('TheVeil.getCertificate() — transport errors', () => {
-  it('wraps a network failure in TheVeilError (not TheVeilHttpError)', async () => {
+describe('Lucairn.getCertificate() — transport errors', () => {
+  it('wraps a network failure in LucairnError (not LucairnHttpError)', async () => {
     server.use(http.get(`${CERT_URL_PREFIX}:id`, () => HttpResponse.error()));
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await client.getCertificate('req_network_0001');
       expect.fail('expected network failure to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilError);
-      expect(err).not.toBeInstanceOf(TheVeilHttpError);
+      expect(err).toBeInstanceOf(LucairnError);
+      expect(err).not.toBeInstanceOf(LucairnHttpError);
     }
   });
 });
 
-describe('TheVeil.getCertificate() — timeout and abort', () => {
-  it('fires TheVeilTimeoutError when the per-call timeout elapses', async () => {
+describe('Lucairn.getCertificate() — timeout and abort', () => {
+  it('fires LucairnTimeoutError when the per-call timeout elapses', async () => {
     server.use(
       http.get(`${CERT_URL_PREFIX}:id`, async () => {
         await delay(500);
@@ -201,17 +201,17 @@ describe('TheVeil.getCertificate() — timeout and abort', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await client.getCertificate('req_slow_0001', { timeoutMs: 50 });
       expect.fail('expected timeout to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(TheVeilTimeoutError);
-      expect((err as TheVeilTimeoutError).message).toContain('50ms');
+      expect(err).toBeInstanceOf(LucairnTimeoutError);
+      expect((err as LucairnTimeoutError).message).toContain('50ms');
     }
   });
 
-  it('rethrows the caller abort reason verbatim (not wrapped in TheVeilTimeoutError)', async () => {
+  it('rethrows the caller abort reason verbatim (not wrapped in LucairnTimeoutError)', async () => {
     server.use(
       http.get(`${CERT_URL_PREFIX}:id`, async () => {
         await delay(10_000);
@@ -224,7 +224,7 @@ describe('TheVeil.getCertificate() — timeout and abort', () => {
     // Fire the abort before the call so composed signal is aborted at entry.
     controller.abort(abortReason);
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     try {
       await client.getCertificate('req_abort_0001', { signal: controller.signal });
       expect.fail('expected caller abort to throw');
@@ -234,7 +234,7 @@ describe('TheVeil.getCertificate() — timeout and abort', () => {
   });
 });
 
-describe('TheVeil.getCertificate() — path encoding', () => {
+describe('Lucairn.getCertificate() — path encoding', () => {
   it('percent-encodes slashes, spaces, and other reserved characters in requestId', async () => {
     let capturedUrl = '';
     server.use(
@@ -247,7 +247,7 @@ describe('TheVeil.getCertificate() — path encoding', () => {
       }),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     await client.getCertificate('req/weird id?');
 
     // Slash → %2F, space → %20, question-mark → %3F. None of these appear raw
@@ -257,13 +257,13 @@ describe('TheVeil.getCertificate() — path encoding', () => {
   });
 });
 
-describe('TheVeil.getCertificate() — observed behaviour on malformed 200 body', () => {
+describe('Lucairn.getCertificate() — observed behaviour on malformed 200 body', () => {
   // Per the locked thin-transport / no-semantic-guards rule: if the gateway
   // ever returns a 200 with a non-JSON payload (or a JSON-but-not-cert
   // payload), the SDK passes it through as-is. This test documents that
   // observed behaviour rather than asserting a guard — callers are expected
   // to run verifyCertificate() next, which will reject malformed bodies with
-  // TheVeilCertificateError({ reason: 'malformed' }).
+  // LucairnCertificateError({ reason: 'malformed' }).
   it('passes a non-JSON 200 body through as the raw text (no throw at transport layer)', async () => {
     server.use(
       http.get(`${CERT_URL_PREFIX}:id`, () =>
@@ -274,7 +274,7 @@ describe('TheVeil.getCertificate() — observed behaviour on malformed 200 body'
       ),
     );
 
-    const client = new TheVeil({ apiKey: VALID_KEY });
+    const client = new Lucairn({ apiKey: VALID_KEY });
     // Typed as VeilCertificate at the call site but the runtime value is the
     // raw string — the caller is responsible for validation downstream.
     const result = (await client.getCertificate('req_malformed_0001')) as unknown;
