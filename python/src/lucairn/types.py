@@ -9,6 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from lucairn.errors import VerifyCertificateFailureReason  # re-exported for convenience
 
 __all__ = [
+    "AuditEntry",
+    "AuditExportOptions",
+    "AuditExportResponse",
     "MessagesOptions",
     "ProxyAcceptedResponse",
     "ProxyJobStatus",
@@ -419,3 +422,78 @@ class VerifyCertificateResult:
     witness_asserted_issued_at_iso: str
     anchor_status: VeilCertAnchorStatus
     overall_verdict: VeilVerdict
+
+
+# ---------------------------------------------------------------------------
+# Audit export — GET /api/v1/audit/export
+# Citations:
+#   - Handler: dual-sandbox-architecture/services/gateway/internal/api/audit_export.go:60-100
+#   - Auth: API-key (authenticateAuditProfile), tier-gated (503 with
+#     `audit_export_unavailable` if not enabled)
+#   - Query params: days (default 30, max 90), type (optional)
+#   - Entry shape: dual-sandbox-architecture/services/gateway/internal/audit/buffer.go:11-17
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AuditExportOptions:
+    """Per-call options for :meth:`Lucairn.list_audit_events`.
+
+    Attributes:
+        days: Lookback window in days; gateway default is 30 if omitted,
+            maximum is 90 (per ``audit_export.go:21-22``). Values outside
+            ``1..90`` are rejected by the gateway with 400.
+        type: Restrict to a specific event type; ``None`` returns all
+            event types.
+        timeout: Per-call timeout in seconds; ``None`` uses the client
+            default. Same semantics as :class:`MessagesOptions.timeout`.
+        headers: Per-call headers merged on top of client defaults; same
+            semantics as :class:`MessagesOptions.headers`.
+    """
+
+    days: int | None = None
+    type: str | None = None
+    timeout: float | None = None
+    headers: dict[str, str] = field(default_factory=dict)
+
+
+class AuditEntry(BaseModel):
+    """A single audit event row, mirroring the gateway's
+    ``audit.Entry`` Go struct
+    (``services/gateway/internal/audit/buffer.go:11-17``):
+
+        type Entry struct {
+            Timestamp time.Time `json:"timestamp"`
+            EventType string    `json:"event_type"`
+            Actor     string    `json:"actor"`
+            Details   string    `json:"details"`
+            RequestID string    `json:"request_id,omitempty"`
+        }
+
+    Uses ``extra="ignore"`` so future gateway-side field additions do
+    not break this SDK.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    timestamp: str  # RFC 3339 (Go time.Time renders as a string in JSON)
+    event_type: str
+    actor: str
+    details: str
+    # Go's `omitempty` means an empty RequestID is dropped from the JSON
+    # entirely; this SDK accepts both that case and an explicit null.
+    request_id: str | None = None
+
+
+class AuditExportResponse(BaseModel):
+    """Response body of ``GET /api/v1/audit/export``
+    (``audit_export.go:91-99``)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    customer_id: str
+    tier: str
+    period: str  # "YYYY-MM-DD to YYYY-MM-DD"
+    events: list[AuditEntry] = Field(default_factory=list)
+    total_events: int
+    source: str
