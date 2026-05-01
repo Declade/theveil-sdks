@@ -273,3 +273,44 @@ type ProxyAcceptedResponse struct {
 }
 
 func (*ProxyAcceptedResponse) isMessagesResponse() {}
+
+// -- Audit-export request / response types --------------------------------
+
+// AuditEntry is a single audit event surfaced by the gateway's
+// /api/v1/audit/export endpoint. Mirrors the gateway's audit.Entry
+// shape at dual-sandbox-architecture/services/gateway/internal/audit/
+// buffer.go:11-17 — same JSON tags so structural tests stay
+// byte-equivalent across both sides.
+type AuditEntry struct {
+	Timestamp time.Time `json:"timestamp"`
+	EventType string    `json:"event_type"`
+	Actor     string    `json:"actor"`
+	Details   string    `json:"details"`
+	RequestID string    `json:"request_id,omitempty"`
+}
+
+// AuditExportOptions configures a ListAuditEvents call.
+//
+//   - Days: lookback window in days. Zero means "use the gateway
+//     default" (30 days at the time of writing — see audit_export.go:21).
+//     The gateway caps at 90 (audit_export.go:22) and rejects values
+//     outside [1,90] with HTTP 400.
+//   - EventType: filter to a single event_type. Zero means "all types".
+type AuditExportOptions struct {
+	Days      int
+	EventType string
+}
+
+// AuditExportResponse is the gateway's response shape for
+// /api/v1/audit/export. Field shape mirrors the inline JSON object
+// constructed at dual-sandbox-architecture/services/gateway/internal/
+// api/audit_export.go:91-99 (anonymous map[string]interface{}); the
+// SDK gives it a typed struct here for ergonomic Go callers.
+type AuditExportResponse struct {
+	CustomerID  string       `json:"customer_id"`
+	Tier        string       `json:"tier"`
+	Period      string       `json:"period"`
+	Events      []AuditEntry `json:"events"`
+	TotalEvents int          `json:"total_events"`
+	Source      string       `json:"source"`
+}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -254,6 +255,64 @@ func (c *Client) GetCertificateSummary(ctx context.Context, requestID string, op
 		return "", err
 	}
 	return html, nil
+}
+
+// ListAuditEvents calls GET /api/v1/audit/export and returns the
+// decoded AuditExportResponse. Pro-tier and Enterprise-tier API keys
+// only — Solo Free returns 403 (ErrTierInsufficient at audit_export.go:
+// 165-168). The gateway gates on profile.AuditExportEnabled, evaluated
+// inside authenticateAuditProfile (audit_export.go:152-171).
+//
+// Query parameters:
+//   - days: lookback window. opts.Days zero means "let the gateway
+//     pick its default" (30 at the time of writing — audit_export.go:
+//     21). Values must satisfy 1 <= days <= 90; out-of-range gets a
+//     typed *HTTPError with Status=400 from the server (the SDK does
+//     not pre-validate the cap so the gateway's authoritative error
+//     surfaces unmodified).
+//   - type: event-type filter; opts.EventType zero means "all".
+//
+// 503 from the gateway when audit-export is unavailable (the audit
+// service backend is down and there is no in-memory buffer fallback)
+// surfaces as *HTTPError with Status=503 — the gateway's
+// audit_export_unavailable code path at audit_export.go:79-85.
+//
+// Source: dual-sandbox-architecture/services/gateway/internal/api/
+// audit_export.go:58-99 (handler + response shape) and
+// services/gateway/internal/audit/buffer.go:11-17 (Entry struct).
+func (c *Client) ListAuditEvents(ctx context.Context, opts AuditExportOptions, callOpts ...CallOption) (*AuditExportResponse, error) {
+	if opts.Days < 0 {
+		return nil, &ConfigError{
+			Message: fmt.Sprintf("AuditExportOptions.Days must be non-negative; got %d", opts.Days),
+		}
+	}
+
+	q := url.Values{}
+	if opts.Days > 0 {
+		q.Set("days", strconv.Itoa(opts.Days))
+	}
+	if opts.EventType != "" {
+		q.Set("type", opts.EventType)
+	}
+	path := "/api/v1/audit/export"
+	if encoded := q.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+
+	_, body, err := c.do(ctx, http.MethodGet, path, nil, callOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	var out AuditExportResponse
+	if decodeErr := decodeInto(body, &out); decodeErr != nil {
+		return nil, &ResponseValidationError{
+			Body:    rawBodyBytes(body),
+			Message: "response failed to deserialize as AuditExportResponse: " + decodeErr.Error(),
+			Err:     decodeErr,
+		}
+	}
+	return &out, nil
 }
 
 // validateVeilCertificate enforces the set of fields a genuine Veil
