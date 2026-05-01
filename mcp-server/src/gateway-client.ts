@@ -118,6 +118,18 @@ export class GatewayClient {
 
     const text = await res.text()
 
+    // 202 ASYNC_PROCESSING — gateway timed out polling upstream LLM
+    // (proxy_async.go:128-144 / mcp_handler.go:516-524). The body has
+    // no Anthropic content[]; surface as a clear retry-shortly error
+    // instead of letting formatToolResult crash on undefined content.
+    if (res.status === 202) {
+      throw new GatewayError(
+        'Gateway timed out polling upstream LLM. Retry shortly.',
+        202,
+        'async_processing',
+      )
+    }
+
     if (!res.ok) {
       let upstream: AnthropicErrorBody | undefined
       try {
@@ -150,6 +162,17 @@ export class GatewayClient {
       const msg = err instanceof Error ? err.message : String(err)
       throw new GatewayError(
         `gateway returned non-JSON 2xx body: ${msg}`,
+        res.status,
+        'malformed_response',
+      )
+    }
+
+    // Runtime shape guard: the downstream formatToolResult assumes
+    // body.content is an array (server.ts:127). Reject any 2xx body
+    // that doesn't satisfy that contract before it crashes the tool.
+    if (!Array.isArray((body as { content?: unknown }).content)) {
+      throw new GatewayError(
+        'Gateway response missing content array (unexpected shape).',
         res.status,
         'malformed_response',
       )
