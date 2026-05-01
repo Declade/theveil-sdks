@@ -356,6 +356,19 @@ class VeilCertificate(BaseModel):
     attestation: VeilExternalAttestation | None = None
     anchor_status: VeilAnchorStatusInfo | None = None
 
+    # Org-scoped correlation field added by W2A-B1 (PR #92, merged
+    # 2026-05-01). Proto definition: ``optional string client_id = 14`` in
+    # ``dual-sandbox-architecture/proto/veil/v1/veil.proto:160``. The
+    # witness assembler extracts org_id from the bridge claim's
+    # canonical_payload at
+    # ``services/veil-witness/internal/assembler/assembler.go:131-155`` and
+    # stamps it here. Field is NOT part of the witness signable map —
+    # tamper evidence is INDIRECT via the bridge claim's bridge-signed
+    # canonical_payload (which is itself in the witness signable via
+    # ``claims``). Promotion of client_id into the signable is a follow-up
+    # deferred until the SDK signable-versioning workstream lands.
+    client_id: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # verify_certificate inputs + outputs — plain dataclasses; they are not
