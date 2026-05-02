@@ -40,14 +40,18 @@ const DefaultTimeout = 30 * time.Second
 // buffer. 10 MiB — see WithMaxResponseBytes for rationale.
 const DefaultMaxResponseBytes int64 = 10 * 1024 * 1024
 
-var apiKeyPattern = regexp.MustCompile(`^dsa_[0-9a-f]{32}$`)
+// Stage 3: gateway accepts both `dsa_<32hex>` (legacy customer keys) and
+// `lcr_live_<chars>` (post-Stage-3 website-minted keys). Keep both shapes
+// here so the SDK doesn't reject either flavor at construction time.
+// Gateway is the truth source for whether the key is actually valid.
+var apiKeyPattern = regexp.MustCompile(`^(dsa_[0-9a-f]{32}|lcr_live_[A-Za-z0-9_\-]{20,})$`)
 
 // New constructs a Client. Validates apiKey, baseURL, and timeout up
 // front — returns a *ConfigError on any problem.
 func New(apiKey string, opts ...Option) (*Client, error) {
 	if !apiKeyPattern.MatchString(apiKey) {
 		return nil, &ConfigError{
-			Message: `invalid apiKey — expected format "dsa_" followed by 32 lowercase hex characters`,
+			Message: `invalid apiKey — expected either "dsa_" followed by 32 lowercase hex characters, or "lcr_live_" followed by at least 20 alphanumeric/underscore/hyphen characters`,
 		}
 	}
 

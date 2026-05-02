@@ -58,6 +58,26 @@ func TestNew_RejectsEmpty(t *testing.T) {
 	}
 }
 
+// Stage 3 backward-compat: gateway mints both `dsa_<32hex>` (legacy/free)
+// and `lcr_live_<chars>` (post-rebrand). SDK construction must accept both.
+func TestNew_AcceptsLcrLiveKey(t *testing.T) {
+	c, err := New("lcr_live_aaabbbcccddd_test123456789")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c == nil {
+		t.Fatal("client is nil")
+	}
+}
+
+func TestNew_RejectsLcrLiveKeyTooShort(t *testing.T) {
+	_, err := New("lcr_live_short")
+	var cfgErr *ConfigError
+	if !errors.As(err, &cfgErr) {
+		t.Fatalf("want ConfigError, got %T", err)
+	}
+}
+
 // -- BaseURL validation --
 
 func TestNew_DefaultBaseURL(t *testing.T) {
