@@ -79,9 +79,10 @@ response = client.messages({
     "max_tokens": 1024,
 })
 
-# Hold the request_id from your own correlation ID, request log, or
-# (on Pro/Enterprise responses) `response.veil.summary_url`.
-request_id = response.request_id  # populated once gateway emits it top-level
+# `response.request_id` is populated on every tier (Developer / Pro / Enterprise).
+# Pro/Enterprise responses additionally expose `response.veil.summary_url` if you
+# want the summary URL directly without an extra fetch.
+request_id = response.request_id
 
 try:
     summary_html = client.get_certificate_summary(request_id)

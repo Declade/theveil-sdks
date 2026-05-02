@@ -111,11 +111,12 @@ func main() {
 		panic(err)
 	}
 
-	// Hold the requestID from your own correlation ID, request log, or
-	// (on Pro/Enterprise responses) the response's Veil block.
+	// resp.RequestID is populated on every tier (Developer / Pro / Enterprise).
+	// Pro/Enterprise responses additionally expose resp.Veil.SummaryURL if you
+	// want the summary URL directly without an extra fetch.
 	var requestID string
 	if sync, ok := resp.(*lucairn.ProxySyncResponse); ok {
-		requestID = sync.RequestID // populated once gateway emits it top-level
+		requestID = sync.RequestID
 	}
 
 	html, err := client.GetCertificateSummary(ctx, requestID)
