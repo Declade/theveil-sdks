@@ -17,7 +17,11 @@ import type {
 } from './types.js';
 import { verifyCertificate as verifyCertificateImpl } from './verify-certificate/index.js';
 
-const API_KEY_PATTERN = /^dsa_[0-9a-f]{32}$/;
+// Stage 3: gateway accepts both `dsa_<32hex>` (legacy customer keys) and
+// `lcr_live_<chars>` (post-Stage-3 website-minted keys). Keep both shapes
+// here so the SDK doesn't reject either flavor at construction time.
+// Gateway is the truth source for whether the key is actually valid.
+const API_KEY_PATTERN = /^(dsa_[0-9a-f]{32}|lcr_live_[A-Za-z0-9_-]{20,})$/;
 
 // Default points at the hosted Lucairn gateway for the Developer tier.
 // Enterprise self-hosters must pass baseUrl explicitly.
@@ -134,7 +138,7 @@ export class Lucairn {
 
     if (!config || typeof config.apiKey !== 'string' || !API_KEY_PATTERN.test(config.apiKey)) {
       throw new LucairnConfigError(
-        'Invalid apiKey — expected format "dsa_" followed by 32 lowercase hex characters',
+        'Invalid apiKey — expected either "dsa_" followed by 32 lowercase hex characters, or "lcr_live_" followed by at least 20 alphanumeric/underscore/hyphen characters',
       );
     }
 
