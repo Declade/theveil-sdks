@@ -45,6 +45,18 @@ describe('Lucairn constructor — apiKey validation', () => {
     // @ts-expect-error — exercising runtime guard against mis-typed input.
     expect(() => new Lucairn({ apiKey: undefined })).toThrow(LucairnConfigError);
   });
+
+  // Stage 3 backward-compat: gateway mints both `dsa_<32hex>` (legacy/free)
+  // and `lcr_live_<chars>` (post-rebrand). SDK construction must accept both.
+  it('accepts a well-formed lcr_live_ key', () => {
+    expect(
+      () => new Lucairn({ apiKey: 'lcr_live_aaabbbcccddd_test123456789' }),
+    ).not.toThrow();
+  });
+
+  it('rejects an lcr_live_ key that is too short', () => {
+    expect(() => new Lucairn({ apiKey: 'lcr_live_short' })).toThrow(LucairnConfigError);
+  });
 });
 
 describe('Lucairn constructor — defaults and baseUrl', () => {
