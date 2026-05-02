@@ -60,10 +60,119 @@ func main() {
 	case *lucairn.ProxyAcceptedResponse:
 		fmt.Println("async — poll:", r.StatusURL)
 	}
+}
+```
 
-	// Fetch a Veil Certificate for a known request_id (Pro/Enterprise).
+## Privacy receipts: free vs Pro tier paths
+
+Every `Messages()` call generates a privacy receipt witnessed by the
+gateway. Two surfaces exist for that receipt, and which one your code
+should consume depends on your tier:
+
+- **`GetCertificateSummary(ctx, requestID)`** — returns a human-readable
+  HTML summary (DPO-friendly). **Available on every tier including
+  Developer (free).**
+- **`GetCertificate(ctx, requestID)` + `VerifyCertificate(cert, keys)`** —
+  fetches the raw JSON certificate and verifies the witness's Ed25519
+  signature over its canonical signed subset. **Pro tier and above.**
+
+If a Developer-tier key calls `GetCertificate`, the gateway returns
+HTTP 403 with `{"error":"tier_insufficient","hint":"Contact sales to
+upgrade."}`, surfaced by the SDK as `*HTTPError` with `Status == 403`.
+
+### Developer tier (free) — render the HTML summary
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	lucairn "github.com/declade/lucairn-sdks/go"
+)
+
+func main() {
+	client, err := lucairn.New("dsa_...")
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.Background()
+	maxTokens := 1024
+	resp, err := client.Messages(ctx, lucairn.MessagesRequest{
+		PromptTemplate: "Hello {name}",
+		Context:        map[string]string{"name": "Example Person"},
+		Model:          "claude-sonnet-4-5",
+		MaxTokens:      &maxTokens,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	// Hold the requestID from your own correlation ID, request log, or
+	// (on Pro/Enterprise responses) the response's Veil block.
+	var requestID string
+	if sync, ok := resp.(*lucairn.ProxySyncResponse); ok {
+		requestID = sync.RequestID // populated once gateway emits it top-level
+	}
+
+	html, err := client.GetCertificateSummary(ctx, requestID)
+	if err != nil {
+		var httpErr *lucairn.HTTPError
+		if errors.As(err, &httpErr) && httpErr.Status == 503 {
+			// Veil Witness temporarily unavailable; retry later.
+			return
+		}
+		panic(err)
+	}
+	fmt.Println("summary html bytes:", len(html))
+	// Display html in a sandboxed iframe or save for the DPO.
+}
+```
+
+### Pro tier and above — fetch + verify the JSON certificate
+
+On Pro and Enterprise tier responses the gateway adds a `Veil` block
+(`*ProxyVeilReceipt` on `ProxySyncResponse.Veil`) carrying `SummaryURL`
+and `CertificateURL`. Pro and Enterprise keys can also fetch the raw
+certificate and verify the witness Ed25519 signature locally for a
+programmatic audit trail.
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	lucairn "github.com/declade/lucairn-sdks/go"
+)
+
+func main() {
+	client, err := lucairn.New("dsa_...")
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.Background()
+
+	// Fetch a Veil Certificate for a known requestID (Pro/Enterprise).
 	cert, err := client.GetCertificate(ctx, "req_abc123")
 	if err != nil {
+		var httpErr *lucairn.HTTPError
+		if errors.As(err, &httpErr) {
+			switch httpErr.Status {
+			case 202:
+				// Pending; retry after httpErr.Body["retry_after_seconds"].
+				return
+			case 403:
+				// Developer (free) tier — use GetCertificateSummary instead.
+				return
+			}
+		}
 		panic(err)
 	}
 
@@ -110,10 +219,14 @@ case *lucairn.ProxyAcceptedResponse:
 
 ### `(*Client).GetCertificate(ctx, requestID, ...CallOption) (*VeilCertificate, error)`
 
-GET `/api/v1/veil/certificate/{requestID}`. Happy-path returns
-`*VeilCertificate`. Gateway-side pending (certificate not yet assembled,
-or unknown requestID — the gateway does not distinguish) surfaces as
-`*HTTPError` with `Status=202` and `Body` holding the pending wrapper:
+GET `/api/v1/veil/certificate/{requestID}`. **Pro tier or above** —
+Developer (free) tier returns HTTP 403 `tier_insufficient`, surfaced as
+`*HTTPError` with `Status == 403`.
+
+Happy-path returns `*VeilCertificate`. Gateway-side pending (certificate
+not yet assembled, or unknown requestID — the gateway does not
+distinguish) surfaces as `*HTTPError` with `Status=202` and `Body`
+holding the pending wrapper:
 
 ```go
 cert, err := client.GetCertificate(ctx, "req_abc")
@@ -129,10 +242,11 @@ No auto-verification — chain `VerifyCertificate` explicitly.
 
 ### `(*Client).GetCertificateSummary(ctx, requestID, ...CallOption) (string, error)`
 
-GET `/api/v1/veil/certificate/{requestID}/summary`. Returns the gateway's
-text/html DPO-friendly summary view as a raw string. Both pending and
-assembled states return HTTP 200 with HTML — pending shows a `PENDING`
-banner instructing the caller to retry in ~30s — so callers who want to
+GET `/api/v1/veil/certificate/{requestID}/summary`. **Available on every
+tier including Developer (free).** Returns the gateway's text/html
+DPO-friendly summary view as a raw string. Both pending and assembled
+states return HTTP 200 with HTML — pending shows a `PENDING` banner
+instructing the caller to retry in ~30s — so callers who want to
 distinguish should chain `GetCertificate` first or pattern-match the
 HTML. 503 surfaces as `*HTTPError` with `Status=503`.
 
