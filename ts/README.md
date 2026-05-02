@@ -72,9 +72,10 @@ const response = await client.messages({
   max_tokens: 1024,
 });
 
-// Hold the requestId from your own correlation ID, request log, or
-// (on Pro/Enterprise responses) `response.veil.summary_url`.
-const requestId = response.request_id; // populated once gateway emits it top-level
+// `response.request_id` is populated on every tier (Developer / Pro / Enterprise).
+// Pro/Enterprise responses additionally expose `response.veil.summary_url` if you
+// want the summary URL directly without an extra fetch.
+const requestId = response.request_id;
 
 let summaryHtml: string;
 try {
