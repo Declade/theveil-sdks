@@ -625,6 +625,49 @@ describe('runStdioBridge', () => {
     expect(stdout.frames[1]).toEqual(validReply)
   })
 
+  it('waits for in-flight forwards to drain before settle() on stdin EOF (m2 regression: late fetch reply must reach transport before close)', async () => {
+    // Make fetch resolve on a delayed tick — NOT on the same microtask
+    // tick as the dispatch. This reproduces a real network call's I/O
+    // boundary: the pre-fix code used setImmediate(() => settle()) which
+    // fires before a delayed-tick fetch can resolve, sending the reply
+    // to a closed transport. The fix tracks in-flight forwards in a Set
+    // and Promise.allSettled-waits before settle().
+    const reply = { jsonrpc: '2.0', id: 99, result: { tools: [] } }
+    let resolveFetch!: (r: Response) => void
+    const fetchPromise = new Promise<Response>((res) => {
+      resolveFetch = res
+    })
+    const fetchSpy = vi.fn().mockReturnValue(fetchPromise)
+    const stdin = stdinFromFrames([
+      { jsonrpc: '2.0', id: 99, method: 'tools/list' },
+    ])
+    const stdout = new CaptureWritable()
+    const bridgePromise = runStdioBridge({
+      apiKey: 'lcr_live_test',
+      baseUrl: 'https://gateway.lucairn.eu',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+      stdin,
+      stdout,
+    })
+    // Yield a few times so the bridge dispatches the frame and stdin EOFs
+    // (Readable.from emits 'end' after the chunk is consumed). The
+    // bridge MUST now be in its drain-and-settle path waiting for the
+    // in-flight fetch — NOT yet closed.
+    for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r))
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    // No reply has been written yet — fetch hasn't resolved.
+    expect(stdout.frames).toHaveLength(0)
+    // Now resolve the fetch on a later tick. Pre-fix: settle() already
+    // ran via setImmediate, transport is closed, this reply is dropped.
+    // Post-fix: drainAndSettle is awaiting Promise.allSettled, the reply
+    // gets written to stdout BEFORE settle() runs.
+    resolveFetch(fakeResponse(200, JSON.stringify(reply)))
+    await bridgePromise
+    // The reply must be on stdout — proves the bridge waited for the
+    // in-flight forward to drain before closing the transport.
+    expect(stdout.frames).toEqual([reply])
+  })
+
   it('rejects when neither baseUrl nor apiKey is supplied', async () => {
     await expect(
       // @ts-expect-error — exercising the runtime guard

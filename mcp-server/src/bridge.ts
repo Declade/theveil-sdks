@@ -303,6 +303,12 @@ export async function runStdioBridge(opts: BridgeOptions): Promise<void> {
   // after the local MCP client closes the pipe.
   return new Promise<void>((resolve, reject) => {
     let settled = false
+    // In-flight forwards that haven't yet written their reply to the
+    // transport. On stdin EOF / abort we must wait for these to drain
+    // before closing the transport — otherwise the late reply gets sent
+    // to a closed transport (m2 race fix). setImmediate() was wrong: a
+    // real fetch's I/O resolves on a later tick than setImmediate.
+    const inFlight = new Set<Promise<void>>()
     const settle = (err?: Error): void => {
       if (settled) return
       settled = true
@@ -319,7 +325,7 @@ export async function runStdioBridge(opts: BridgeOptions): Promise<void> {
       // Fire-and-forget: each frame round-trips independently. JSON-RPC
       // does not require strict in-order responses, and fire-and-forget
       // lets a slow tools/call not block a fast tools/list.
-      void (async (): Promise<void> => {
+      const p = (async (): Promise<void> => {
         try {
           const reply = await forwardFrame({
             frame,
@@ -345,6 +351,10 @@ export async function runStdioBridge(opts: BridgeOptions): Promise<void> {
           )
         }
       })()
+      inFlight.add(p)
+      void p.finally(() => {
+        inFlight.delete(p)
+      })
     }
 
     transport.onclose = (): void => {
@@ -376,12 +386,28 @@ export async function runStdioBridge(opts: BridgeOptions): Promise<void> {
         })
     }
 
-    if (opts.signal) {
-      if (opts.signal.aborted) {
-        settle()
+    // Wait for every in-flight forward to drain before closing the
+    // transport. Snapshot the set at call time so frames that arrive
+    // after drainAndSettle() is invoked still get processed if the
+    // transport hasn't closed yet (best-effort drain, not a hard fence).
+    const drainAndSettle = (err?: Error): void => {
+      if (settled) return
+      const pending = [...inFlight]
+      if (pending.length === 0) {
+        settle(err)
         return
       }
-      opts.signal.addEventListener('abort', () => settle(), { once: true })
+      void Promise.allSettled(pending).then(() => settle(err))
+    }
+
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        drainAndSettle()
+        return
+      }
+      opts.signal.addEventListener('abort', () => drainAndSettle(), {
+        once: true,
+      })
     }
 
     // The SDK's StdioServerTransport listens for 'data' / 'error' on
@@ -389,12 +415,13 @@ export async function runStdioBridge(opts: BridgeOptions): Promise<void> {
     // observe stdin EOF ourselves and trigger a clean shutdown when the
     // local MCP client closes the pipe. Without this, runStdioBridge
     // would block forever after the last frame.
+    //
+    // We must wait for in-flight fetches to drain before closing the
+    // transport — a real fetch's I/O completes on a later tick than
+    // setImmediate, so naive setImmediate(() => settle()) would send the
+    // late reply to a closed transport (m2 race fix).
     const onStdinEnd = (): void => {
-      // Give any in-flight fetches a couple of microtasks to write their
-      // replies to stdout before we close the transport. setImmediate is
-      // good enough — fetch promises resolve as microtasks, transport
-      // .send writes synchronously.
-      setImmediate(() => settle())
+      drainAndSettle()
     }
     stdin.once('end', onStdinEnd)
     stdin.once('close', onStdinEnd)
