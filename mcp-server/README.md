@@ -124,21 +124,9 @@ See https://lucairn.eu/developer/mcp for the full setup guide.
 
 ## Smithery (URL-based publishing)
 
-The Lucairn gateway is also published on [Smithery](https://smithery.ai) as a remote MCP server — no install needed for users on Smithery-aware MCP clients. The Smithery card lives in [`smithery.yaml`](./smithery.yaml) and points at the public gateway endpoint:
+The Lucairn gateway can be listed on [Smithery](https://smithery.ai) as a remote MCP server — no install needed for users on Smithery-aware MCP clients. Listing publishes via the smithery.ai web UI (paste the URL `https://gateway.lucairn.eu/mcp` at [smithery.ai/new](https://smithery.ai/new)) or the Smithery CLI: `smithery mcp publish "https://gateway.lucairn.eu/mcp"`. No `smithery.yaml` schema is required — Smithery's URL-only publication path discovers the server's tool catalog directly from the gateway's MCP endpoint.
 
-```yaml
-startCommand:
-  type: http
-  url: https://gateway.lucairn.eu/mcp
-```
-
-To install via Smithery:
-
-```bash
-smithery install @lucairn/lucairn-privacy-gateway
-```
-
-Smithery prompts for the `lucairnApiKey` (and optional `anthropicApiKey` / `openaiApiKey`) at install time and forwards them on each request. Internally this is the same streamable-HTTP transport the `stdio-bridge` mode uses; either path lands on the gateway's `POST /mcp` endpoint.
+Once listed, Smithery prompts users for the `lucairnApiKey` (and optional Anthropic / OpenAI BYOK keys) at install time and forwards them on each request. Internally this is the same streamable-HTTP transport the `stdio-bridge` mode uses; either path lands on the gateway's `POST /mcp` endpoint.
 
 ## Limitations / known issues
 
