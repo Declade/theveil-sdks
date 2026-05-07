@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Declade/lucairn-mcp-server",
-  "description": "MCP server that pseudonymizes PII before your LLM sees it and returns a cryptographically signed receipt for every response.",
+  "description": "Pseudonymizes PII before your LLM and returns a cryptographically signed receipt per response.",
   "repository": {
     "url": "https://github.com/Declade/lucairn-sdks",
     "source": "github"
