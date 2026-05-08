@@ -346,11 +346,21 @@ class TestVerifyCertificateByokExempt:
         assert cert.verification.overall_verdict == "VERDICT_VERIFIED"
 
     def test_byok_exempt_default_false_on_older_cert(
-        self, cert_valid_anchored: dict[str, Any]
+        self,
+        cert_valid_anchored: dict[str, Any],
+        witness_keypair: dict[str, str],
     ) -> None:
         """Backward compat — older certs (pre-byok-exempt gateway) do not
         carry the field. The Pydantic default is ``False``, so older certs
-        parse cleanly with ``byok_exempt=False``."""
+        parse cleanly with ``byok_exempt=False``.
+
+        DRIFT-002 — also exercise the full ``verify_certificate`` path so a
+        future signable-derivation regression on older-shape certs (e.g.,
+        accidentally promoting ``byok_exempt`` into the signable map) gets
+        caught at the byte-identity layer, not just at the Pydantic parse
+        layer. The witness signable is the same 7-key set whether or not
+        ``byok_exempt`` is present on the wire, so the older fixture
+        signature must still verify."""
 
         from lucairn.verify_certificate.parse import parse_certificate
 
@@ -358,6 +368,13 @@ class TestVerifyCertificateByokExempt:
         assert "byok_exempt" not in cert_valid_anchored["verification"]
         cert = parse_certificate(cert_valid_anchored)
         assert cert.verification.byok_exempt is False
+
+        # Full verify pipeline must still pass on the older-shape cert —
+        # byok_exempt is NOT in the witness signable, so its absence cannot
+        # affect signature verification.
+        result = verify_certificate(cert_valid_anchored, _keys(witness_keypair))
+        assert result.overall_verdict == "VERDICT_VERIFIED"
+        assert result.anchor_status == "ANCHOR_STATUS_ANCHORED"
 
 
 # -- verify_certificate — ordering + error shape --------------------------
@@ -562,6 +579,71 @@ class TestVerifyCertificateGapFills:
         with pytest.raises(LucairnCertificateError) as exc_info:
             verify_certificate(cert, _keys(witness_keypair))
         assert exc_info.value.reason == "malformed"
+
+
+# -- Signable freeze (TOB-001) --------------------------------------------
+
+
+class TestSignableFreeze:
+    """The 7-key witness signable map is a hard-locked W2A invariant: any
+    change to its shape, key order (canonical-JSON sorts alphabetically so
+    this is automatic), or per-field encoding breaks every external verifier
+    in the wild. Locking the canonical bytes against a Go-reference hex
+    fixture catches regressions at the byte-identity layer rather than at the
+    higher signature-verification layer.
+
+    The hex was produced by running ``derive_witness_signed_bytes`` over
+    ``cert-go-signed-reference.json`` (which is itself produced by the Go
+    assembler oracle — see TS verifyCertificate.test.ts:355-389) and is the
+    authoritative pinned canonical form. If this test fails after a
+    deliberate signable-shape change, regenerate BOTH the Go-side and
+    SDK-side fixtures per the steps documented at
+    ``dual-sandbox-architecture/services/veil-witness/internal/testoracle/README.md``
+    — never paper over by regenerating just this hex.
+    """
+
+    def test_byte_identical_to_go_reference(
+        self, cert_go_signed_reference: dict[str, Any], ts_fixtures_dir: Path
+    ) -> None:
+        from lucairn.verify_certificate.parse import parse_certificate
+        from lucairn.verify_certificate.signable import (
+            derive_witness_signed_bytes,
+        )
+
+        expected_hex = (
+            (ts_fixtures_dir / "signable-go-reference.hex").read_text().strip()
+        )
+        cert = parse_certificate(cert_go_signed_reference)
+        actual_hex = derive_witness_signed_bytes(cert).hex()
+        assert actual_hex == expected_hex
+
+    def test_signable_contains_exactly_seven_keys_no_byok_exempt(
+        self, cert_go_signed_reference: dict[str, Any]
+    ) -> None:
+        # Defense-in-depth: the hex equality assertion above already pins
+        # the exact bytes, but a structural assertion at the JSON layer is
+        # easier to read in the failure message if a future contributor
+        # adds a key.
+        from lucairn.verify_certificate.parse import parse_certificate
+        from lucairn.verify_certificate.signable import (
+            derive_witness_signed_bytes,
+        )
+
+        cert = parse_certificate(cert_go_signed_reference)
+        decoded = json.loads(derive_witness_signed_bytes(cert).decode("utf-8"))
+        assert sorted(decoded.keys()) == [
+            "certificate_id",
+            "claim_ids",
+            "issued_at",
+            "overall_verdict",
+            "protocol_version",
+            "request_id",
+            "witness_key_id",
+        ]
+        # byok_exempt MUST NOT leak into the signable — tamper-evidence is
+        # INDIRECT via the bridge claim's bridge-signed canonical_payload.
+        assert "byok_exempt" not in decoded
+        assert "client_id" not in decoded
 
 
 # -- Client delegation -----------------------------------------------------

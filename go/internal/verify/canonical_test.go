@@ -192,3 +192,104 @@ func TestCanonicalJSON_MatchesGoReferenceHex(t *testing.T) {
 			actualHex, expectedHex, string(out), "<see hex>")
 	}
 }
+
+// TOB-001 — Signable freeze test. The 7-key witness signable map is a
+// hard-locked W2A invariant: any change to its shape, key order
+// (canonical-JSON sorts alphabetically so this is automatic), or per-field
+// encoding breaks every external verifier in the wild. Locking the canonical
+// bytes against a Go-reference hex fixture catches regressions at the
+// byte-identity layer rather than at the higher signature-verification layer.
+//
+// The hex was produced by running DeriveSignedBytes over the field values
+// from `cert-go-signed-reference.json` (which is itself produced by the Go
+// assembler oracle — see verify_certificate_test.go:79-99) and is the
+// authoritative pinned canonical form. If this test fails after a deliberate
+// signable-shape change, regenerate BOTH the Go-side and SDK-side fixtures
+// per the steps documented at
+//   dual-sandbox-architecture/services/veil-witness/internal/testoracle/README.md
+// — never paper over by regenerating just this hex.
+func TestDeriveSignedBytes_MatchesSignableFreezeHex(t *testing.T) {
+	fixtures := tsFixturesDir(t)
+
+	hexBytes, err := os.ReadFile(filepath.Join(fixtures, "signable-go-reference.hex"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedHex := strings.TrimSpace(string(hexBytes))
+
+	// Field values match cert-go-signed-reference.json. Hard-coded here
+	// rather than parsed from the fixture because (a) DeriveSignedBytes is
+	// in package `verify` (internal) and the cert-parsing helper isn't in
+	// scope without an import cycle, and (b) hard-coding makes the freeze
+	// boundary explicit — any change to either the cert fixture or the
+	// expected bytes must be reflected here.
+	out, err := DeriveSignedBytes(DeriveSignedBytesInput{
+		CertificateID: "veil_oracle_0000000000000001",
+		RequestID:     "req_oracle_0000000000000001",
+		ClaimRequestIDs: []string{
+			"req_oracle_0000000000000001",
+			"req_oracle_0000000000000001",
+			"req_oracle_0000000000000001",
+			"req_oracle_0000000000000001",
+		},
+		ClaimIDs: []string{
+			"clm_oracle_dsa-bridge",
+			"clm_oracle_dsa-sanitizer",
+			"clm_oracle_dsa-ai",
+			"clm_oracle_dsa-audit",
+		},
+		IssuedAt:               "2026-04-20T05:24:12.710321721Z",
+		OverallVerdictFullName: "VERDICT_VERIFIED",
+		WitnessKeyID:           "witness_v1",
+	})
+	if err != nil {
+		t.Fatalf("DeriveSignedBytes returned error: %v", err)
+	}
+	actualHex := hex.EncodeToString(out)
+	if actualHex != expectedHex {
+		t.Fatalf("signable byte-equality failed (W2A invariant violated):\n  got:  %s\n  want: %s\n  got-bytes: %s",
+			actualHex, expectedHex, string(out))
+	}
+}
+
+// Companion structural assertion to the byte-identity test above. Easier
+// failure-message readability if a future contributor adds a key, while the
+// hex equality remains the load-bearing freeze.
+func TestDeriveSignedBytes_SignableContainsExactlySevenKeys(t *testing.T) {
+	out, err := DeriveSignedBytes(DeriveSignedBytesInput{
+		CertificateID:          "veil_oracle_0000000000000001",
+		RequestID:              "req_oracle_0000000000000001",
+		ClaimRequestIDs:        []string{"req_oracle_0000000000000001"},
+		ClaimIDs:               []string{"clm_oracle_dsa-bridge"},
+		IssuedAt:               "2026-04-20T05:24:12.710321721Z",
+		OverallVerdictFullName: "VERDICT_VERIFIED",
+		WitnessKeyID:           "witness_v1",
+	})
+	if err != nil {
+		t.Fatalf("DeriveSignedBytes returned error: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatalf("signable bytes are not valid JSON: %v", err)
+	}
+	wantKeys := []string{
+		"certificate_id", "claim_ids", "issued_at", "overall_verdict",
+		"protocol_version", "request_id", "witness_key_id",
+	}
+	if len(decoded) != len(wantKeys) {
+		t.Fatalf("signable has %d keys, want %d (W2A 7-key invariant)", len(decoded), len(wantKeys))
+	}
+	for _, k := range wantKeys {
+		if _, ok := decoded[k]; !ok {
+			t.Errorf("signable missing required key %q", k)
+		}
+	}
+	// byok_exempt MUST NOT leak into the signable — tamper-evidence is
+	// INDIRECT via the bridge claim's bridge-signed canonical_payload.
+	if _, leaked := decoded["byok_exempt"]; leaked {
+		t.Errorf("byok_exempt leaked into signable map (W2A invariant violated)")
+	}
+	if _, leaked := decoded["client_id"]; leaked {
+		t.Errorf("client_id leaked into signable map (W2A invariant violated)")
+	}
+}

@@ -5,6 +5,8 @@ import { generateKeyPairSync, sign, type JsonWebKey } from 'node:crypto';
 import { normalizeEd25519PublicKey } from './verify-certificate/keys.js';
 import { verifyEd25519 } from './verify-certificate/signature.js';
 import { verifyCertificate } from './verify-certificate/index.js';
+import { deriveWitnessSignedBytes } from './verify-certificate/signable.js';
+import { parseCertificate } from './verify-certificate/parse.js';
 import { LucairnCertificateError } from './errors.js';
 import type { VeilCertificate, VerifyCertificateKeys } from './types.js';
 
@@ -287,12 +289,23 @@ describe('verifyCertificate — BYOK_EXEMPT', () => {
     expect(result.anchorStatus).toBe('ANCHOR_STATUS_ANCHORED');
   });
 
-  it('byok_exempt absent from older cert fixture defaults to undefined (backward compat)', () => {
+  it('byok_exempt absent from older cert fixture defaults to undefined (backward compat)', async () => {
     // Older certs (pre-byok-exempt gateway) do not carry the field. The
     // optional field on VeilVerificationResult means the parsed object
     // simply has no `byok_exempt` key — not `false`, not a parse error.
+    //
+    // DRIFT-002 — also exercise the full verifyCertificate path so a future
+    // signable-derivation regression on older-shape certs (e.g., accidentally
+    // promoting `byok_exempt` into the signable map) gets caught at the
+    // byte-identity layer, not just at the structural-parse layer. The witness
+    // signable is the same 7-key set whether or not `byok_exempt` is present
+    // on the wire, so the older fixture signature must still verify.
     const cert = loadFixture('cert-valid-anchored.json');
     expect(cert.verification.byok_exempt).toBeUndefined();
+
+    const result = await verifyCertificate(cert, keysAll());
+    expect(result.overallVerdict).toBe('VERDICT_VERIFIED');
+    expect(result.anchorStatus).toBe('ANCHOR_STATUS_ANCHORED');
   });
 });
 
@@ -501,6 +514,63 @@ describe('Lucairn#verifyCertificate client delegation', () => {
 // catchability invariant explicit so a future migration that drops one alias
 // fails this test loudly rather than silently breaking pre-Stage-3 callers.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// TOB-001 — Signable freeze test. The 7-key witness signable map is a
+// hard-locked W2A invariant: any change to its shape, key order
+// (canonical-JSON sorts alphabetically so this is automatic), or per-field
+// encoding breaks every external verifier in the wild. Locking the canonical
+// bytes against a Go-reference hex fixture catches regressions at the
+// byte-identity layer rather than at the higher signature-verification layer
+// (which would surface as `invalid_signature` on an otherwise-valid cert and
+// give no signal about which field encoding drifted).
+//
+// The hex was produced by running `deriveWitnessSignedBytes` over
+// `cert-go-signed-reference.json` (which is itself produced by the Go
+// assembler oracle — see verifyCertificate.test.ts:355-389) and is the
+// authoritative pinned canonical form. If this test fails after a deliberate
+// signable-shape change, regenerate BOTH the Go-side and SDK-side fixtures
+// per the steps documented at
+//   dual-sandbox-architecture/services/veil-witness/internal/testoracle/README.md
+// — never paper over by regenerating just this hex.
+// ---------------------------------------------------------------------------
+describe('deriveWitnessSignedBytes — signable freeze (TOB-001)', () => {
+  it('produces byte-identical canonical bytes against the Go-reference cert fixture', () => {
+    const expectedHex = readFileSync(
+      join(fixturesDir, 'signable-go-reference.hex'),
+      'utf8',
+    ).trim();
+    const goCert = parseCertificate(loadFixture('cert-go-signed-reference.json'));
+    const bytes = deriveWitnessSignedBytes(goCert);
+    const actualHex = Buffer.from(bytes).toString('hex');
+    expect(actualHex).toBe(expectedHex);
+  });
+
+  it('signable contains exactly the 7 keys (sorted) — no byok_exempt, no client_id', () => {
+    // Defense-in-depth: a hex equality assertion above already pins the
+    // exact bytes, but a structural assertion at the JSON layer is easier
+    // to read in the failure message if a future contributor adds a key.
+    const goCert = parseCertificate(loadFixture('cert-go-signed-reference.json'));
+    const bytes = deriveWitnessSignedBytes(goCert);
+    const decoded = JSON.parse(new TextDecoder().decode(bytes)) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(decoded).sort()).toEqual([
+      'certificate_id',
+      'claim_ids',
+      'issued_at',
+      'overall_verdict',
+      'protocol_version',
+      'request_id',
+      'witness_key_id',
+    ]);
+    // byok_exempt MUST NOT leak into the signable — tamper-evidence is
+    // INDIRECT via the bridge claim's bridge-signed canonical_payload.
+    expect(decoded).not.toHaveProperty('byok_exempt');
+    expect(decoded).not.toHaveProperty('client_id');
+  });
+});
+
 describe('verifyCertificate alias regression — live throws are catchable as both names', () => {
   it('a malformed-input rejection satisfies instanceof for both LucairnCertificateError and TheVeilCertificateError', async () => {
     const { TheVeilCertificateError } = await import('./errors.js');
