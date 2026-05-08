@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Python 1.1.0] — 2026-05-08
+
+### Added
+- `ISOLATION_PROBE_BYOK_EXEMPT` literal value on `IsolationProbeStatus` and
+  the matching probe-status enum surface, mirroring the gateway's
+  `ISOLATION_PROBE_BYOK_EXEMPT` proto enum (`dual-sandbox-architecture`
+  proto field on `IsolationProbeStatus`).
+- `byok_exempt: bool = False` field on `VeilVerificationResult` (proto
+  field number 9 on `VerificationResult`). Surfaces the gateway's
+  BYOK-exempt verification flag while keeping backward-compat with older
+  certs that omit the field.
+- BYOK-exempt cert fixture (signed with the existing test keypair) plus
+  parse + verify tests asserting end-to-end witness verification on
+  byok_exempt certs.
+- Backward-compat coverage: `verify_certificate` is now exercised against
+  a pre-byok_exempt-shape cert to lock in that the 7-key witness signable
+  map has not regressed (DRIFT-002).
+- Signable freeze test (`TestSignableFreeze`) — pins
+  `derive_witness_signed_bytes(cert_go_signed_reference)` byte-for-byte
+  against the new `signable-go-reference.hex` fixture (TOB-001). Catches
+  any future change to the 7-key signable map at the byte-identity layer
+  rather than only at the signature-verification layer.
+
+## [TypeScript 1.1.0] — 2026-05-08
+
+### Added
+- `ISOLATION_PROBE_BYOK_EXEMPT` literal added to the `IsolationProbeStatus`
+  union type.
+- `byok_exempt?: boolean` optional field on the `VeilVerificationResult`
+  interface (proto field number 9). Optional rather than defaulted so the
+  wire-absent state remains observable to TS callers.
+- New BYOK-exempt cert fixture
+  (`ts/src/verify-certificate/__fixtures__/cert-byok-exempt.json`), signed
+  with the existing test keypair so SDK verification passes end-to-end.
+- Parse + verify tests for the byok_exempt path.
+- Backward-compat coverage: `verifyCertificate` is now exercised against
+  a pre-byok_exempt-shape cert to lock in that the 7-key witness signable
+  map has not regressed (DRIFT-002).
+- Signable freeze test
+  (`describe('deriveWitnessSignedBytes — signable freeze (TOB-001)')`) —
+  pins `deriveWitnessSignedBytes(cert-go-signed-reference)` byte-for-byte
+  against the new `signable-go-reference.hex` fixture (TOB-001).
+
+## [Go v1.1.0] — 2026-05-08
+
+### Added
+- `ByokExempt bool` field on `VeilVerificationResult` with
+  `json:"byok_exempt,omitempty"` (proto field number 9 on
+  `VerificationResult`).
+- Test asserting the field round-trips through SDK JSON parse and is
+  surfaced on the parsed cert.
+- Signable freeze test (`TestDeriveSignedBytes_MatchesSignableFreezeHex`
+  + `TestDeriveSignedBytes_SignableContainsExactlySevenKeys`) in
+  `go/internal/verify/canonical_test.go` — pins `DeriveSignedBytes`
+  byte-for-byte against the new `signable-go-reference.hex` fixture
+  (TOB-001) and asserts the 7-key invariant structurally.
+- Cross-language docstring on the `ByokExempt` field documenting the
+  Python / TS / Go absence-vs-false semantic asymmetry (DRIFT-001 /
+  TOB-003).
+
 ## [mcp-server 1.2.1] — 2026-05-07
 
 ### Fixed
