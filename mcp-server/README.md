@@ -2,11 +2,11 @@
 
 Model Context Protocol (MCP) server for [Lucairn](https://lucairn.eu) — privacy-preserving AI gateway.
 
-This package lets [Claude Desktop](https://claude.ai/download) (or any MCP-compatible client) route messages through Lucairn's privacy pipeline. PII is detected and replaced with placeholders before reaching the LLM; responses are re-linked back to the originals before delivery to you.
+This package lets [Claude Desktop](https://claude.ai/download) (or any MCP-compatible client) route messages through Lucairn's privacy pipeline. PII is detected and replaced with placeholders before reaching the LLM. Developer-tier responses keep placeholders visible; Pro and Enterprise tiers can re-link placeholders before delivery.
 
 ## Status
 
-`v1.2.0`. Two transport modes are now supported (see `LUCAIRN_TRANSPORT` below):
+`v1.2.4`. Two transport modes are now supported (see `LUCAIRN_TRANSPORT` below):
 
 - **`direct-http`** (default — recommended for stdio CLI users): the npm package owns the MCP tool catalog locally and forwards each `chat_via_lucairn` call to the gateway's Anthropic-Messages-shape endpoint at `POST /api/v1/mcp/messages` ([gateway source](https://github.com/Declade/dual-sandbox-architecture/blob/main/services/gateway/internal/api/mcp_handler.go)). Lowest latency.
 - **`stdio-bridge`** (opt-in, new in v1.2): the npm package is a thin stdio↔HTTP bridge. Stdio JSON-RPC frames are forwarded to the gateway's streamable-HTTP MCP endpoint at `POST /mcp` ([gateway source](https://github.com/Declade/dual-sandbox-architecture/blob/main/services/gateway/internal/api/mcp_streamable.go), live since 2026-05-06 via PR #135). Tool catalogs come from the gateway, so future tools and tier-aware descriptors land without re-publishing this package.
@@ -63,7 +63,7 @@ All variables accept either the legacy `DSA_*` prefix (matching gateway / websit
 | `DSA_GATEWAY_URL` / `LUCAIRN_BASE_URL` | No | Lucairn gateway base URL. Defaults to `https://gateway.lucairn.eu`. Set to a self-hosted gateway URL for Enterprise deployments. |
 | `LUCAIRN_TRANSPORT` | No | `direct-http` (default) or `stdio-bridge`. See "Transport modes" below. Any other value causes a non-zero exit at startup. |
 | `ANTHROPIC_API_KEY` | No | Optional BYOK upstream key for Claude / Anthropic models. If set, forwarded as `X-Upstream-Key` so your Anthropic account is billed directly (gateway does not store it). |
-| `OPENAI_API_KEY` | No | Optional BYOK upstream key for GPT / `o1` / `o3` / `o4` models. If set, forwarded as `X-Upstream-Key` so your OpenAI account is billed directly (gateway does not store it). |
+| `OPENAI_API_KEY` | No | Optional BYOK upstream key for OpenAI models. If set, forwarded as `X-Upstream-Key` so your OpenAI account is billed directly (gateway does not store it). |
 
 ## Transport modes
 
@@ -108,7 +108,7 @@ Trade-off: one extra round-trip vs `direct-http`, since each frame is serialized
 The server registers one MCP tool, `chat_via_lucairn`, which Claude (or any MCP client) can invoke:
 
 - **Input:** `model` (string), `max_tokens` (number), `messages` (array of `{role, content}`), optional `system` (string), optional `temperature` (number).
-- **Behavior:** POSTs the request to `${baseUrl}/api/v1/mcp/messages` with `x-api-key: ${apiKey}` and the optional `X-Upstream-Key` header. The gateway runs sanitization (Presidio + QI), forwards the redacted prompt to the upstream LLM, re-links the response, and returns an Anthropic Messages API response shape.
+- **Behavior:** POSTs the request to `${baseUrl}/api/v1/mcp/messages` with `x-api-key: ${apiKey}` and the optional `X-Upstream-Key` header. The gateway runs sanitization (Presidio + QI), forwards the redacted prompt to the upstream LLM, and returns an Anthropic Messages API response shape. Developer-tier responses keep placeholders visible; Pro and Enterprise tiers can re-link placeholders before delivery.
 - **Output:** The LLM's text response, returned as the tool result.
 
 The Anthropic-Messages request shape is documented in the gateway's [`MCPPayloadSchema`](https://github.com/Declade/dual-sandbox-architecture/blob/main/services/gateway/internal/api/mcp_payload_schema.go).
@@ -117,8 +117,8 @@ The Anthropic-Messages request shape is documented in the gateway's [`MCPPayload
 
 - Every message is scanned for PII (names, emails, addresses, medical terms, etc.) before it reaches the LLM.
 - Detected PII is replaced with safe placeholders. The LLM never sees raw personal data.
-- Responses are re-linked: placeholders are swapped back to the original values before they are returned to the MCP client.
-- A Lucairn Certificate is generated for each request — cryptographic proof of what was sanitized. View certificates at https://lucairn.eu/account/audit.
+- Response handling is tier-aware: Developer keeps placeholders visible, while Pro and Enterprise can swap placeholders back before returning to the MCP client.
+- A Lucairn Certificate is generated for each request — cryptographic proof of what was sanitized. View certificate summaries at https://lucairn.eu/verify or in your account audit trail.
 
 See https://lucairn.eu/developer/mcp for the full setup guide.
 

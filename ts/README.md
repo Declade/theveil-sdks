@@ -36,7 +36,7 @@ gateway). Enterprise self-host deployments must pass `baseUrl` explicitly.
 const response = await client.messages({
   prompt_template: 'Hello {name}',
   context: { name: 'Example Person' },
-  model: 'claude-sonnet-4-5',
+  model: 'claude-sonnet-4-6',
   max_tokens: 1024,
 });
 ```
@@ -68,7 +68,7 @@ const client = new Lucairn({ apiKey: process.env.LUCAIRN_API_KEY! });
 const response = await client.messages({
   prompt_template: 'Hello {name}',
   context: { name: 'Example Person' },
-  model: 'claude-sonnet-4-5',
+  model: 'claude-sonnet-4-6',
   max_tokens: 1024,
 });
 

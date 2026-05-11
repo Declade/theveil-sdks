@@ -50,7 +50,7 @@ class LucairnConfig:
     """Constructor configuration for :class:`lucairn.Lucairn`.
 
     Attributes:
-        api_key: DSA API key. Must match ``^dsa_[0-9a-f]{32}$``.
+        api_key: Lucairn API key (``lcr_live_...``) or legacy ``dsa_...`` key.
         base_url: Gateway base URL. Defaults to the hosted gateway.
             Must be ``https://`` for non-loopback hosts; ``http://`` is
             accepted only for ``localhost`` / ``127.0.0.1`` / ``::1`` /

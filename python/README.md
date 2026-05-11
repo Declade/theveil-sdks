@@ -4,7 +4,7 @@ Client for **Lucairn** — privacy-preserving AI gateway.
 
 ## Status
 
-`1.0.0`. Ships alongside the TypeScript SDK and behaves identically at the
+`1.1.1`. Ships alongside the TypeScript SDK and behaves identically at the
 observable level. See the [monorepo README](../README.md) for the full SDK
 index.
 
@@ -36,13 +36,13 @@ Requires Python 3.10+.
 ```python
 from lucairn import Lucairn, LucairnConfig
 
-client = Lucairn(LucairnConfig(api_key="dsa_..."))
+client = Lucairn(LucairnConfig(api_key="lcr_live_..."))
 
 # Proxy a prompt through the Lucairn gateway (split-knowledge routing).
 response = client.messages({
     "prompt_template": "Summarize the following in one sentence: {text}",
     "context": {"text": "Long input..."},
-    "model": "claude-opus-4-7",
+    "model": "claude-sonnet-4-6",
     "max_tokens": 256,
 })
 ```
@@ -70,12 +70,12 @@ upgrade."}`, surfaced by the SDK as `LucairnHttpError` with
 ```python
 from lucairn import Lucairn, LucairnConfig, LucairnHttpError
 
-client = Lucairn(LucairnConfig(api_key="dsa_..."))
+client = Lucairn(LucairnConfig(api_key="lcr_live_..."))
 
 response = client.messages({
     "prompt_template": "Hello {name}",
     "context": {"name": "Example Person"},
-    "model": "claude-sonnet-4-5",
+    "model": "claude-sonnet-4-6",
     "max_tokens": 1024,
 })
 
@@ -105,7 +105,7 @@ signature locally for a programmatic audit trail.
 ```python
 from lucairn import Lucairn, LucairnConfig, VerifyCertificateKeys, LucairnHttpError
 
-client = Lucairn(LucairnConfig(api_key="dsa_..."))
+client = Lucairn(LucairnConfig(api_key="lcr_live_..."))
 
 try:
     cert = client.get_certificate(request_id)  # 200 on Pro/Enterprise; 403 on Developer (free)
@@ -132,7 +132,7 @@ print(result.overall_verdict, result.anchor_status)
 
 Constructor validates every input up front:
 
-- `api_key` must match `^dsa_[0-9a-f]{32}$`.
+- `api_key` must be a Lucairn key (`lcr_live_...`) or a legacy `dsa_...` key.
 - `base_url` must be `http://` or `https://`; defaults to
   `https://gateway.lucairn.eu`.
 - `timeout` must be a positive finite number of **seconds** (default `30.0`).

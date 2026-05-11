@@ -1,6 +1,6 @@
 # Lucairn SDKs
 
-Official client libraries for **[Lucairn](https://lucairn.eu)** — an EU-based privacy-preserving AI gateway. Lucairn sits between your application (or AI agent) and the upstream LLM (Claude, GPT-4o, o1/o3/o4) and removes personal data from prompts before the model ever sees them. Every response carries a cryptographically signed compliance certificate proving what was redacted, when, and by which sanitizer layer.
+Official client libraries for **[Lucairn](https://lucairn.eu)** — an EU-based privacy-preserving AI gateway. Lucairn sits between your application (or AI agent) and the upstream LLM provider you choose, removes personal data from prompts before the model ever sees them, and returns a signed Lucairn Certificate proving what was redacted, when, and by which sanitizer layer.
 
 This monorepo hosts four packages at parity:
 
@@ -46,7 +46,7 @@ Each request through any Lucairn SDK follows the same pipeline:
    - **Layer 2** — Presidio NER (names, emails, IBANs, addresses, phone numbers, customer IDs, …)
    - **Layer 3** — GPU-hosted custom-trained PII shield (**Enterprise tier only**, optionally trained on your domain corpus)
 2. Detected PII is replaced with placeholders (`[PERSON_1]`, `[EMAIL_2]`, `[IBAN_3]`, …) **before** the request reaches the upstream LLM.
-3. The upstream model (Claude or OpenAI) sees only the sanitized text. It never receives raw personal data.
+3. The selected upstream model sees only the sanitized text. It never receives raw personal data.
 4. The response is returned with a signed compliance certificate (Ed25519 witness signature + RFC 3161 timestamp + Sigstore Rekor inclusion proof).
 5. **Response handling depends on tier:**
    - **Developer (free)** — placeholders are returned verbatim. Useful for testing the redaction surface.
@@ -69,10 +69,10 @@ Cross-provider BYOK shipped in `@lucairn/mcp-server@1.1.0` — set one or both k
 
 | Language       | Package                                   | Version | README                              |
 |----------------|-------------------------------------------|---------|-------------------------------------|
-| MCP server     | `@lucairn/mcp-server`                     | 1.2.0   | [mcp-server/README.md](mcp-server/README.md) |
-| TypeScript     | `@lucairn/sdk`                            | 1.0.0   | [ts/README.md](ts/README.md)        |
-| Python         | `lucairn`                                 | 1.0.0   | [python/README.md](python/README.md) |
-| Go             | `github.com/declade/lucairn-sdks/go`      | v0.1.0  | [go/README.md](go/README.md)        |
+| MCP server     | `@lucairn/mcp-server`                     | 1.2.4   | [mcp-server/README.md](mcp-server/README.md) |
+| TypeScript     | `@lucairn/sdk`                            | 1.1.1   | [ts/README.md](ts/README.md)        |
+| Python         | `lucairn`                                 | 1.1.1   | [python/README.md](python/README.md) |
+| Go             | `github.com/declade/lucairn-sdks/go`      | v1.1.1  | [go/README.md](go/README.md)        |
 
 All SDKs are at parity at the observable level. Cross-language byte-equivalence is locked via shared Go-assembler-generated fixtures, so a certificate signed via one SDK verifies identically via the other two.
 
@@ -95,7 +95,7 @@ External RFC 3161 + Sigstore Rekor anchor verification is currently surfaced as 
 
 ## Status
 
-Pre-1.0 monorepo, individual packages tagged per the table above. Cross-language byte-equivalence locked via shared fixtures. Follow [CHANGELOG.md](CHANGELOG.md) for release notes.
+Production packages are versioned independently and tagged per the table above. Cross-language byte-equivalence is locked via shared fixtures. Follow [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Links
 
@@ -106,6 +106,7 @@ Pre-1.0 monorepo, individual packages tagged per the table above. Cross-language
 - **OpenAI SDK setup guide**: [https://lucairn.eu/developer/openai](https://lucairn.eu/developer/openai)
 - **Verify a certificate**: [https://lucairn.eu/verify](https://lucairn.eu/verify)
 - **Glama listing**: [https://glama.ai/mcp/servers/Declade/lucairn-sdks](https://glama.ai/mcp/servers/Declade/lucairn-sdks)
+- **mcp.so listing**: [https://mcp.so/server/lucairn-privacy-gateway/Declade](https://mcp.so/server/lucairn-privacy-gateway/Declade)
 - **npm — `@lucairn/mcp-server`**: [https://www.npmjs.com/package/@lucairn/mcp-server](https://www.npmjs.com/package/@lucairn/mcp-server)
 - **npm — `@lucairn/sdk`**: [https://www.npmjs.com/package/@lucairn/sdk](https://www.npmjs.com/package/@lucairn/sdk)
 - **PyPI — `lucairn`**: [https://pypi.org/project/lucairn/](https://pypi.org/project/lucairn/)

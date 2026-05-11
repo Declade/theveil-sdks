@@ -4,7 +4,7 @@ Client for **Lucairn** — privacy-preserving AI infrastructure.
 
 ## Status
 
-Pre-1.0 (v0.1.0). Ships alongside the TypeScript SDK's `0.2.0` and behaves
+`v1.1.1`. Ships alongside the TypeScript and Python SDKs and behaves
 identically at the observable level. See the [monorepo
 README](../README.md) for the full SDK index.
 
@@ -16,12 +16,7 @@ go get github.com/declade/lucairn-sdks/go@latest
 
 Requires Go 1.22+.
 
-> **Stage 3 rebrand in progress.** The Declade SDK monorepo is being
-> renamed to `Declade/lucairn-sdks`. GitHub auto-redirects old URLs for 12
-> months after rename, so `go get` against the new path resolves via the
-> redirect until cutover. The previous import path under the legacy repo
-> name is RETIRED and will not be updated; new code should use the
-> path above.
+The canonical module path is `github.com/declade/lucairn-sdks/go`.
 
 ## Quickstart
 
@@ -36,7 +31,7 @@ import (
 )
 
 func main() {
-	client, err := lucairn.New("dsa_...")
+	client, err := lucairn.New("lcr_live_...")
 	if err != nil {
 		panic(err)
 	}
@@ -48,7 +43,7 @@ func main() {
 	resp, err := client.Messages(ctx, lucairn.MessagesRequest{
 		PromptTemplate: "Summarize the following: {text}",
 		Context:        map[string]string{"text": "Long input..."},
-		Model:          "claude-opus-4-7",
+		Model:          "claude-sonnet-4-6",
 		MaxTokens:      &maxTokens,
 	})
 	if err != nil {
@@ -94,7 +89,7 @@ import (
 )
 
 func main() {
-	client, err := lucairn.New("dsa_...")
+	client, err := lucairn.New("lcr_live_...")
 	if err != nil {
 		panic(err)
 	}
@@ -104,7 +99,7 @@ func main() {
 	resp, err := client.Messages(ctx, lucairn.MessagesRequest{
 		PromptTemplate: "Hello {name}",
 		Context:        map[string]string{"name": "Example Person"},
-		Model:          "claude-sonnet-4-5",
+		Model:          "claude-sonnet-4-6",
 		MaxTokens:      &maxTokens,
 	})
 	if err != nil {
@@ -153,7 +148,7 @@ import (
 )
 
 func main() {
-	client, err := lucairn.New("dsa_...")
+	client, err := lucairn.New("lcr_live_...")
 	if err != nil {
 		panic(err)
 	}
@@ -195,9 +190,7 @@ func main() {
 
 Constructor validates every input up front:
 
-- `apiKey` must match `^dsa_[0-9a-f]{32}$`. (Stage 3 rebrand: gateway will
-  later validate `^lcr_live_*` keys; until then the legacy `dsa_*` form
-  is the source of truth.)
+- `apiKey` must be a Lucairn key (`lcr_live_...`) or a legacy `dsa_...` key.
 - `WithBaseURL(url)` must be `http://` or `https://`; default is
   `https://gateway.lucairn.eu`.
 - `WithTimeout(d)` must be a positive `time.Duration`; default `30s`.
