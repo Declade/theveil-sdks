@@ -270,9 +270,12 @@ export function formatToolResult(resp: AnthropicResponseBody): {
     .join('')
 
   const compliance = resp.metadata?.dsa_compliance
+  const certificateUrl = compliance?.veil_summary_url
+    ? publicCertificateUrl(compliance.veil_summary_url)
+    : undefined
   const trailer =
-    compliance && compliance.veil_summary_url
-      ? `\n\n_Lucairn certificate: ${compliance.veil_summary_url}_`
+    certificateUrl
+      ? `\n\n_Lucairn certificate: ${certificateUrl}_`
       : ''
 
   return {
@@ -285,6 +288,19 @@ export function formatToolResult(resp: AnthropicResponseBody): {
       ...(compliance ? { compliance } : {}),
     },
   }
+}
+
+function publicCertificateUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.pathname.endsWith('/summary')) {
+      parsed.pathname = parsed.pathname.replace(/\/summary$/, '/public-summary')
+      return parsed.toString()
+    }
+  } catch {
+    return url.replace(/\/summary$/, '/public-summary')
+  }
+  return url
 }
 
 /**

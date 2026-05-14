@@ -113,7 +113,7 @@ describe('formatToolResult', () => {
     })
   })
 
-  it('appends a Lucairn certificate URL when present in metadata', () => {
+  it('appends a public Lucairn certificate URL when present in metadata', () => {
     const out = formatToolResult({
       ...baseResp,
       metadata: {
@@ -126,7 +126,8 @@ describe('formatToolResult', () => {
       },
     })
     expect(out.content[0].text).toContain('Lucairn certificate:')
-    expect(out.content[0].text).toContain('certificate/abc/summary')
+    expect(out.content[0].text).toContain('certificate/abc/public-summary')
+    expect(out.content[0].text).not.toContain('certificate/abc/summary')
   })
 
   it('omits the certificate trailer when metadata is missing', () => {
