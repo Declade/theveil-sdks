@@ -342,7 +342,7 @@ function gatewayErrorToToolResult(err: GatewayError): {
  */
 export function buildServer(client: GatewayClient): Server {
   const server = new Server(
-    { name: 'lucairn-mcp-server', version: '1.1.0' },
+    { name: 'lucairn-mcp-server', version: '1.2.5' },
     { capabilities: { tools: {} } },
   )
 

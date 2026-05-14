@@ -6,7 +6,7 @@ This package lets [Claude Desktop](https://claude.ai/download) (or any MCP-compa
 
 ## Status
 
-`v1.2.4`. Two transport modes are now supported (see `LUCAIRN_TRANSPORT` below):
+`v1.2.5`. Two transport modes are now supported (see `LUCAIRN_TRANSPORT` below):
 
 - **`direct-http`** (default — recommended for stdio CLI users): the npm package owns the MCP tool catalog locally and forwards each `chat_via_lucairn` call to the gateway's Anthropic-Messages-shape endpoint at `POST /api/v1/mcp/messages` ([gateway source](https://github.com/Declade/dual-sandbox-architecture/blob/main/services/gateway/internal/api/mcp_handler.go)). Lowest latency.
 - **`stdio-bridge`** (opt-in, new in v1.2): the npm package is a thin stdio↔HTTP bridge. Stdio JSON-RPC frames are forwarded to the gateway's streamable-HTTP MCP endpoint at `POST /mcp` ([gateway source](https://github.com/Declade/dual-sandbox-architecture/blob/main/services/gateway/internal/api/mcp_streamable.go), live since 2026-05-06 via PR #135). Tool catalogs come from the gateway, so future tools and tier-aware descriptors land without re-publishing this package.
