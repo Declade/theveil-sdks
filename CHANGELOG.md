@@ -11,27 +11,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - MCP tool result now normalizes Lucairn certificate URLs to the
-  auth-less `/public-summary` endpoint in both the human-readable
-  trailer AND the structured content payload. Previously emitted
-  auth-gated `/summary` URLs that returned 401 to MCP-client
-  end-users. Bug latent from v1.0.0 through v1.2.4. Source change:
-  introduces `publicComplianceMetadata()` which re-maps
-  `veil_summary_url` and `veil_certificate_url` on the
-  `metadata.dsa_compliance` block before it crosses the MCP
-  `structuredContent` boundary
-  (`mcp-server/src/server.ts:269-308`).
+  auth-less `/public-summary` endpoint in BOTH the human-readable
+  trailer (already normalized in v1.2.5) AND the
+  `structuredContent.compliance` payload (newly closed here).
+  v1.2.5 introduced `publicCertificateUrl()` but applied it only to
+  the trailer string; the `metadata.dsa_compliance` object that
+  crosses the MCP `structuredContent` boundary still carried the
+  auth-gated `/summary` URLs and returned 401 to MCP-client
+  end-users that followed them. v1.2.6 introduces
+  `publicComplianceMetadata()` which re-maps `veil_summary_url`
+  AND `veil_certificate_url` on the `dsa_compliance` block before
+  it leaves `formatToolResult()`, and the trailer now reads the
+  pre-normalized `compliance.veil_summary_url` directly. Source:
+  `mcp-server/src/server.ts:270-308`. Trailer-side bug latent from
+  v1.0.0 through v1.2.4 (5 versions); structuredContent-side bug
+  latent from v1.2.2 (when `structuredContent` was first emitted)
+  through v1.2.5 (4 versions).
 
 ## [mcp-server 1.2.5] — 2026-05-14
 
+### Added
+- `publicCertificateUrl()` helper in `mcp-server/src/server.ts:293`.
+  Rewrites a `/summary` path on a Lucairn certificate URL to the
+  auth-less `/public-summary` route. Used by the human-readable
+  `_Lucairn certificate: …_` trailer emitted by
+  `formatToolResult()` so MCP-client end-users following the
+  trailer link land on the public, auth-less endpoint rather than
+  the auth-gated one that returns 401. See
+  `mcp-server/src/server.ts:270-302`.
+
 ### Deprecated
-- **v1.2.5 still emitted auth-gated `/summary` URLs in
-  `structuredContent.compliance`; use v1.2.6.** This release was a
-  partial fix: the human-readable trailer was rewritten through
-  `publicCertificateUrl()` in v1.2.4 but the structured-content
-  payload still carried the auth-gated URLs. v1.2.5 bumped only the
-  in-source `Server({ name, version })` advertisement string
-  (`mcp-server/src/server.ts:345`) without closing the
-  structuredContent leak. v1.2.6 completes the fix via
+- **v1.2.5 still emits auth-gated `/summary` URLs inside
+  `structuredContent.compliance`; use v1.2.6.** v1.2.5 is a
+  partial fix: the new `publicCertificateUrl()` helper rewrites
+  only the trailer string and does NOT touch the
+  `metadata.dsa_compliance` object that crosses the MCP
+  `structuredContent` boundary. MCP clients that follow
+  `structuredContent.compliance.veil_summary_url` or
+  `veil_certificate_url` continue to hit the auth-gated route and
+  receive 401. v1.2.6 closes the gap via
   `publicComplianceMetadata()`. This version will be marked
   deprecated on npm via `npm deprecate @lucairn/mcp-server@1.2.5
   "use v1.2.6 — partial fix; leaks auth-gated cert URLs in
@@ -39,14 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [mcp-server 1.2.4] — 2026-05-14
 
-### Fixed
-- Trailer text in `formatToolResult()` now wraps the
-  `veil_summary_url` through `publicCertificateUrl()` so the
-  human-readable `_Lucairn certificate: …_` trailer points at the
-  auth-less `/public-summary` route instead of the auth-gated
-  `/summary` route. The same fix did not yet reach the
-  `structuredContent.compliance` block — v1.2.6 closes that gap.
-  See `mcp-server/src/server.ts:269-302`.
+### Changed
+- README + version table copy refreshed across the public SDK
+  registry surfaces (`README.md`, `mcp-server/README.md`,
+  `python/README.md`, `ts/README.md`, `go/README.md`,
+  `python/pyproject.toml`, `python/src/lucairn/types.py`) to
+  document the v1.2.x mcp-server lineage in lockstep with the
+  TS/Python/Go SDK READMEs. Docs-only release; no code change.
+  Cert-URL normalization did NOT ship in this version — that
+  landed in v1.2.5 (trailer) and v1.2.6 (full).
 
 ## [mcp-server 1.2.3] — 2026-05-07
 
